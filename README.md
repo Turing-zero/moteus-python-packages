@@ -6,7 +6,16 @@ controllers.
 ## To use ##
 
 ```
-pip3 install moteus  # or 'moteus-pi3hat' on a pi3hat
+pip install .
+```
+- windows
+```bash
+python -m moteus_gui.tview --can-iface candle --can-chan 0 --can-disable-brs
+```
+
+- ubuntu
+```bash
+python -m moteus_gui.tview --can-iface socketcan --can-chan can0 --can-disable-brs
 ```
 
 See a simple example of the API in use at: [simple.py](examples/simple.py)

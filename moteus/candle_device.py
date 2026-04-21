@@ -41,6 +41,8 @@ class CandleDevice(TransportDevice):
         sample_point: float = 87.5,
         data_sample_point: float = 87.5,
         disable_brs: bool = False,
+        listen_only: bool = False,
+        termination: typing.Optional[bool] = None,
         debug_log=None,
         max_buffer_size: int = 50,
         padding_hex: str = '50',
@@ -58,6 +60,8 @@ class CandleDevice(TransportDevice):
           data_sample_point: Data sample point in percent (FD only).
           disable_brs: If True, suppress the Bit Rate Switch flag even
             for FD frames (useful when the peer does not support BRS).
+          listen_only: Enable listen-only mode for this channel.
+          termination: Optional channel termination setting.
           debug_log: Optional file-like object; raw CAN log is written
             to it when provided.
           max_buffer_size: Maximum number of frames to buffer.
@@ -73,6 +77,7 @@ class CandleDevice(TransportDevice):
         self._disable_brs = disable_brs
         self._serial_number = serial_number
         self._channel_index = channel_index
+        self._fd = fd
         self._setup = False
         self._notifier = None
 
@@ -97,6 +102,17 @@ class CandleDevice(TransportDevice):
             fd=fd,
             bitrate=bitrate,
             sample_point=sample_point,
+            channel_configs={
+                channel_index: {
+                    'bitrate': bitrate,
+                    'data_bitrate': data_bitrate if fd else None,
+                    'sample_point': sample_point,
+                    'data_sample_point': data_sample_point if fd else None,
+                    'fd': fd,
+                    'listen_only': listen_only,
+                    'termination': termination,
+                },
+            },
         )
         if fd:
             bus_kwargs['data_bitrate'] = data_bitrate
@@ -105,6 +121,46 @@ class CandleDevice(TransportDevice):
             bus_kwargs['serial_number'] = serial_number
 
         self._can = can.Bus(**bus_kwargs)
+        self._maybe_start_channel()
+
+    def _maybe_start_channel(self):
+        """Best-effort candle backend initialization and channel start."""
+        # Different python-can/candle_api versions expose startup hooks
+        # on different objects. Try known candidates and ignore unsupported
+        # operations so older backends keep working.
+        candidates = [self._can]
+        for attr in ('candle', '_candle', 'device', '_device'):
+            obj = getattr(self._can, attr, None)
+            if obj is not None:
+                candidates.append(obj)
+
+        for obj in candidates:
+            for method_name in ('init', 'initialize'):
+                method = getattr(obj, method_name, None)
+                if not callable(method):
+                    continue
+                try:
+                    method(self._channel_index)
+                except TypeError:
+                    method()
+                except Exception as e:
+                    logging.debug(
+                        f"candle init skipped for {self._log_prefix}: {e}"
+                    )
+
+        for obj in candidates:
+            for method_name in ('start', 'startup'):
+                method = getattr(obj, method_name, None)
+                if not callable(method):
+                    continue
+                try:
+                    method(self._channel_index)
+                except TypeError:
+                    method()
+                except Exception as e:
+                    logging.debug(
+                        f"candle start skipped for {self._log_prefix}: {e}"
+                    )
 
     # ------------------------------------------------------------------
     # Properties

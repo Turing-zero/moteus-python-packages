@@ -15,6 +15,8 @@
 import asyncio
 import collections
 import os
+import re
+import subprocess
 import sys
 import time
 import typing
@@ -22,6 +24,82 @@ import typing
 from .transport_device import Frame, FrameFilter, TransportDevice, Subscription
 
 can: typing.Any = None
+
+
+def _maybe_start_socketcan(interface: str, bus_kwargs: typing.Dict[str, typing.Any]) -> None:
+    """Best-effort startup for Linux socketcan interfaces.
+
+    If the current process does not have sufficient privileges, this logs a
+    debug message and returns without raising.
+    """
+    if not sys.platform.startswith('linux'):
+        return
+
+    # Restrict to canonical "canX" names to avoid shelling out on arbitrary
+    # channel identifiers.
+    if not re.fullmatch(r'can\d+', interface):
+        return
+
+    bitrate = bus_kwargs.get('bitrate', 1000000)
+    data_bitrate = bus_kwargs.get('data_bitrate', 5000000)
+    fd = bool(bus_kwargs.get('fd', True))
+    sample_point = bus_kwargs.get('sample_point', None)
+    data_sample_point = bus_kwargs.get('data_sample_point', None)
+
+    def _sample_point_text(value: typing.Any) -> typing.Optional[str]:
+        if value is None:
+            return None
+        try:
+            val = float(value)
+            if val > 1.0:
+                val = val / 100.0
+            if val <= 0.0 or val >= 1.0:
+                return None
+            return f"{val:.6f}".rstrip('0').rstrip('.')
+        except (TypeError, ValueError):
+            return None
+
+    def _run_ip(args: typing.List[str], require_success: bool) -> None:
+        candidates = []
+        if os.geteuid() != 0:
+            candidates.append(['sudo'] + args)
+        candidates.append(args)
+
+        last_error = None
+        for cmd in candidates:
+            try:
+                subprocess.run(cmd, check=True, capture_output=True, text=True)
+                return
+            except Exception as e:
+                last_error = e
+        if require_success and last_error:
+            raise last_error
+
+    try:
+        # Reconfigure deterministically: down -> type/bitrate -> up
+        _run_ip(['ip', 'link', 'set', interface, 'down'], require_success=False)
+
+        configure_cmd = ['ip', 'link', 'set', interface, 'type', 'can']
+        configure_cmd.extend(['bitrate', str(int(bitrate))])
+        sample_point_text = _sample_point_text(sample_point)
+        if sample_point_text:
+            configure_cmd.extend(['sample-point', sample_point_text])
+        if fd:
+            configure_cmd.extend([
+                'fd', 'on',
+                'dbitrate', str(int(data_bitrate)),
+            ])
+            data_sample_point_text = _sample_point_text(data_sample_point)
+            if data_sample_point_text:
+                configure_cmd.extend(['dsample-point', data_sample_point_text])
+        _run_ip(configure_cmd, require_success=True)
+        _run_ip(['ip', 'link', 'set', interface, 'up'], require_success=True)
+    except Exception as e:
+        import logging
+        logging.warning(
+            f"socketcan startup failed for {interface}: {e}. "
+            "Please check permissions or configure interface manually.",
+            exc_info=True)
 
 
 def _detect_fdcanusb_serial_linux(ifname: str) -> typing.Optional[str]:
@@ -287,6 +365,11 @@ class PythonCanDevice(TransportDevice):
                 nom_sample_point=66, data_sample_point=66,
                 f_clock=80000000)
 
+        if kwargs.get('interface', can.rc.get('interface', None)) == 'socketcan':
+            channel = kwargs.get('channel', can.rc.get('channel', None))
+            if isinstance(channel, str):
+                _maybe_start_socketcan(channel, kwargs)
+
         self._can = can.Bus(*args, **kwargs)
         self._setup = False
 
@@ -354,7 +437,7 @@ class PythonCanDevice(TransportDevice):
             dlc=dlc,
             data=frame.data + bytes(self._padding_byte) * padding_bytes,
             is_fd=frame.is_fd,
-            bitrate_switch=False,
+            bitrate_switch=frame.bitrate_switch and not self._disable_brs,
         )
 
     def _can_message_to_frame(self, message) -> Frame:

@@ -126,10 +126,6 @@ class CandleFactory:
             '--candle-data-bitrate', type=int, default=None,
             metavar='RATE',
             help='candle data phase bitrate in bps for FD (default: 5000000)')
-        parser.add_argument(
-            '--candle-chan', type=int, action='append',
-            metavar='INDEX',
-            help='candle channel index (may be repeated)')
 
     def is_args_set(self, args):
         return args and (
@@ -144,7 +140,7 @@ class CandleFactory:
             pass
         elif not self.is_args_set(args):
             raise RuntimeError(
-                'candle transport requires --candle-chan on Linux')
+                'candle transport requires --can-chan on Linux')
 
         kwargs = {}
         if args:
@@ -156,18 +152,6 @@ class CandleFactory:
                 kwargs['debug_log'] = args.can_debug
 
         all_devices = candle_device.CandleDevice.enumerate_devices(**kwargs)
-
-        if args and getattr(args, 'candle_chan', None):
-            selected = []
-            flat = list(all_devices)
-            for idx in args.candle_chan:
-                if idx < len(flat):
-                    selected.append(flat[idx])
-                else:
-                    raise RuntimeError(
-                        f'--candle-chan {idx} out of range '
-                        f'(found {len(flat)} channel(s))')
-            return selected
 
         if not all_devices:
             raise RuntimeError('No candle devices detected')

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-This is the Python bindings package (`moteus` v0.3.100) for the mjbots moteus brushless controller. It provides an async Python API for communicating with moteus controllers over CAN-FD.
+This is the Python bindings package (`moteus` v0.3.101) for the mjbots moteus brushless controller. It provides an async Python API for communicating with moteus controllers over CAN-FD.
 
 ## Setup
 
