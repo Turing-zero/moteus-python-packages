@@ -1176,6 +1176,118 @@ class Stream:
                     raise
             i += 1
 
+    async def do_reset_ab_shape(self):
+        """Zero motor.offset_ab[0..63]."""
+        if not await self.is_config_supported("motor.offset_ab.0"):
+            raise RuntimeError(
+                "Firmware does not support motor.offset_ab; upgrade firmware.")
+        for i in range(64):
+            await self.command(f"conf set motor.offset_ab.{i} 0")
+        await self.conf_write()
+        print("motor.offset_ab cleared.")
+
+    async def do_calibrate_ab_shape(self):
+        """Factory-calibrate motor.offset_ab[64] (the AB encoder
+        non-linearity table used by the HALL->AB runtime switch).
+
+        Strategy: drive the motor at a constant electrical-phase rate
+        in voltage-FOC mode, sample (electrical_theta, ab_ratio)
+        pairs, and accumulate sin/cos per 64-bin index to produce a
+        circular mean of the per-bin phase correction.  Then write
+        each bin back via `conf set motor.offset_ab.{i} {value}`.
+        """
+        if not await self.is_config_supported("motor.offset_ab.0"):
+            raise RuntimeError(
+                "Firmware does not support motor.offset_ab; upgrade firmware.")
+
+        quad_source = await self.read_config_int(
+            "motor_position.quad_source")
+        if quad_source < 0:
+            raise RuntimeError(
+                "motor_position.quad_source must be set before "
+                "running --calibrate-ab-shape")
+
+        poles = await self.read_config_int("motor.poles")
+        if poles <= 0 or (poles % 2) != 0:
+            raise RuntimeError(
+                f"motor.poles ({poles}) must be a non-zero even number; "
+                "run --calibrate first.")
+        quad_cpr = await self.read_config_int(
+            f"motor_position.sources.{quad_source}.cpr")
+        if quad_cpr <= 0:
+            raise RuntimeError(
+                f"motor_position.sources.{quad_source}.cpr ({quad_cpr}) "
+                "must be positive.")
+
+        # Conservative fixed voltage for the open-loop spin.  Tuned
+        # for typical hub motors (0.3 V is enough to overcome cogging
+        # at low speed without risking over-current on most coils);
+        # advanced users can override via --cal-voltage.
+        encoder_cal_voltage = (
+            self.args.cal_voltage
+            if self.args.cal_voltage is not None
+            else 0.3)
+        # 1 electrical rev/s on the rotor frame; safe for most hub
+        # motors and gives ~poles/2 mech rev over 10 s ≈ a couple of
+        # full mechanical revolutions for typical 14-pole-pair motors.
+        electrical_rev_per_s = 1.0
+        phase_rate = electrical_rev_per_s * 2.0 * math.pi
+        duration_s = 10.0
+        sample_period_s = 0.01
+
+        # Per-bin circular-mean accumulators.
+        sin_sum = [0.0] * 64
+        cos_sum = [0.0] * 64
+        count = [0] * 64
+
+        print(f"Spinning rotor at ~{electrical_rev_per_s:.2f} elec rev/s "
+              f"for {duration_s:.1f} s ({encoder_cal_voltage:.2f} V FOC).")
+        await self.command(f"d pwm 0 {encoder_cal_voltage} {phase_rate}")
+        await asyncio.sleep(2.0)  # let velocity settle
+
+        sample_count = int(duration_s / sample_period_s)
+        for k in range(sample_count):
+            await asyncio.sleep(sample_period_s)
+            mp = await self.read_data("motor_position")
+            theta = mp.electrical_theta
+            quad_filtered = mp.sources[quad_source].filtered_value
+            if quad_cpr <= 0:
+                continue
+            ratio = (quad_filtered / quad_cpr) % 1.0
+            # Same geometry as ISR_AccumulateHallTrigger: the table
+            # being calibrated should satisfy
+            #   theta = ratio * pole_scale + lerp(offset_ab, ratio)
+            pole_scale = poles * 0.5 * 2.0 * math.pi
+            target = theta - ratio * pole_scale
+            # Wrap to [-pi, pi).
+            target = ((target + math.pi) % (2.0 * math.pi)) - math.pi
+            bin_idx = int(ratio * 64) % 64
+            sin_sum[bin_idx] += math.sin(target)
+            cos_sum[bin_idx] += math.cos(target)
+            count[bin_idx] += 1
+            if not self.args.verbose and (k % 20) == 0:
+                spinner = "/-\\|"[(k // 20) % 4]
+                print(f"Sampling {spinner} ({k}/{sample_count})",
+                      end='\r', flush=True)
+
+        await self.command("d stop")
+        print()
+
+        missing = [i for i, c in enumerate(count) if c == 0]
+        if missing:
+            raise RuntimeError(
+                f"Bins not covered during calibration: {missing}; "
+                "rotor likely didn't make a full mechanical revolution.")
+
+        offset_ab = [
+            math.atan2(sin_sum[i], cos_sum[i]) for i in range(64)
+        ]
+        print("Storing motor.offset_ab[64]")
+        for i, off in enumerate(offset_ab):
+            await self.command(f"conf set motor.offset_ab.{i} {off}")
+        await self.conf_write()
+        print("motor.offset_ab calibration complete.")
+
     async def do_calibrate(self):
         try:
             await self.do_checked_calibrate()
@@ -2277,6 +2389,10 @@ class Runner:
             await stream.do_flash(self.args.flash)
         elif self.args.calibrate:
             await stream.do_calibrate()
+        elif self.args.calibrate_ab_shape:
+            await stream.do_calibrate_ab_shape()
+        elif self.args.reset_ab_shape:
+            await stream.do_reset_ab_shape()
         else:
             raise RuntimeError("No action specified")
 
@@ -2326,6 +2442,16 @@ async def async_main():
 
     group.add_argument('--calibrate', action='store_true',
                         help='calibrate the motor, requires full freedom of motion')
+    group.add_argument('--calibrate-ab-shape', action='store_true',
+                        help=('factory-calibrate motor.offset_ab[64] '
+                              '(AB encoder non-linearity table for the '
+                              'HALL->AB runtime switch).  Requires full '
+                              'freedom of motion.'))
+    group.add_argument('--reset-ab-shape', action='store_true',
+                        help=('zero out motor.offset_ab[64] (i.e. '
+                              'disable AB shape compensation; the '
+                              'HALL->AB switch will use a pure global '
+                              'Δ).'))
 
     group.add_argument('--zero-offset', action='store_true',
                         help='set the motor\'s position offset')
