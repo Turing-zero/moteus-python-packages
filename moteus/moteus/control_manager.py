@@ -27,6 +27,7 @@ import asyncio
 import csv
 import dataclasses
 import math
+import queue
 import threading
 import time
 from enum import Enum, auto
@@ -110,11 +111,25 @@ class _CommandItem:
     rezero_pos: Optional[float] = None
 
 
-def _make_default_qr() -> QueryResolution:
+def make_query_resolution(profile: str = 'full') -> QueryResolution:
+    """Build a ``QueryResolution`` for ControlManager cycles.
+
+    Profiles
+    --------
+    - ``lite``: mode/position/velocity/torque/voltage/temperature/fault.
+      Smaller CAN replies; typically ~2–4× faster than ``full`` on USB adapters.
+    - ``full``: also trajectory_complete, abs_position, and encoder 0–2.
+    """
+    profile = (profile or 'full').lower()
+    if profile == 'lite':
+        return QueryResolution()
+
+    if profile != 'full':
+        raise ValueError(f"Unknown query profile {profile!r}; use 'lite' or 'full'")
+
     qr = QueryResolution()
     qr.trajectory_complete = mp.INT8
     qr.abs_position = mp.F32
-    from moteus.protocol import Register
     qr._extra = {
         int(Register.ENCODER_0_POSITION): mp.F32,
         int(Register.ENCODER_0_VELOCITY): mp.F32,
@@ -125,6 +140,11 @@ def _make_default_qr() -> QueryResolution:
         int(Register.ENCODER_VALIDITY): mp.INT8,
     }
     return qr
+
+
+def _make_default_qr() -> QueryResolution:
+    """Backward-compatible alias for ``make_query_resolution('full')``."""
+    return make_query_resolution('full')
 
 
 class ControlManager:
@@ -144,8 +164,13 @@ class ControlManager:
         manager.disconnect()
     """
 
-    def __init__(self, cycle_hz: float = 200.0):
+    def __init__(
+        self,
+        cycle_hz: float = 200.0,
+        query_profile: str = 'full',
+    ):
         self._cycle_period_s = 1.0 / cycle_hz
+        self._query_profile = query_profile
 
         self._state = ManagerState.DISCONNECTED
         self._state_lock = threading.RLock()
@@ -220,6 +245,18 @@ class ControlManager:
 
     def is_connected(self) -> bool:
         return self.get_state() == ManagerState.CONNECTED
+
+    def set_query_profile(self, profile: str) -> None:
+        """Set ``lite``/``full`` query profile (takes effect on next connect)."""
+        # Validate early.
+        make_query_resolution(profile)
+        with self._state_lock:
+            if self._state in (ManagerState.CONNECTING, ManagerState.CONNECTED):
+                raise RuntimeError('Cannot change query_profile while connected')
+            self._query_profile = profile
+
+    def get_query_profile(self) -> str:
+        return self._query_profile
 
     def get_status(self) -> Dict[int, ControllerStatus]:
         """Return a thread-safe snapshot of all controller statuses."""
@@ -484,7 +521,7 @@ class ControlManager:
         transport = await self._build_transport(
             can_type, can_iface, can_chan, can_disable_brs
         )
-        qr = _make_default_qr()
+        qr = make_query_resolution(self._query_profile)
         controllers = {
             cid: Controller(id=cid, transport=transport, query_resolution=qr)
             for cid in controller_ids
@@ -743,8 +780,9 @@ class CsvLogger:
         ...
         logger.close()
 
-    The callback runs in the asyncio background thread and only acquires the
-    lock during the actual file write, keeping latency impact minimal.
+    By default writes happen on a background thread so disk I/O does not stall
+    the control loop.  Pass ``async_write=False`` for synchronous line-buffered
+    writes (useful for debugging).
     """
 
     DEFAULT_FIELDS = [
@@ -767,19 +805,36 @@ class CsvLogger:
         filepath: str,
         controller_ids: Optional[List[int]] = None,
         fields: Optional[List[str]] = None,
+        async_write: bool = True,
     ):
         self._filter_ids = set(controller_ids) if controller_ids else None
         self._fields = fields or self.DEFAULT_FIELDS
-        self._file = open(filepath, 'w', newline='', buffering=1)
+        # Larger buffer when async; line-buffer when sync for immediate visibility.
+        bufsize = -1 if async_write else 1
+        self._file = open(filepath, 'w', newline='', buffering=bufsize)
         self._writer = csv.DictWriter(self._file, fieldnames=self._fields)
         self._writer.writeheader()
         self._lock = threading.Lock()
-        self._t0 = time.monotonic()
+        # Use perf_counter: on Windows, time.monotonic() is GetTickCount64()
+        # with ~15.6ms resolution, which quantizes CSV timestamps and makes
+        # high-rate logs look like ~64Hz even when the loop is faster.
+        self._t0 = time.perf_counter()
         self._row_count = 0
+        self._async_write = async_write
+        self._write_q: Optional[queue.SimpleQueue] = None
+        self._writer_thread: Optional[threading.Thread] = None
+        if async_write:
+            self._write_q = queue.SimpleQueue()
+            self._writer_thread = threading.Thread(
+                target=self._writer_loop,
+                name='moteus-csv-writer',
+                daemon=True,
+            )
+            self._writer_thread.start()
 
     def on_status_update(self, status: Dict[int, ControllerStatus]) -> None:
         """Listener callback — called from the asyncio thread."""
-        now = time.monotonic() - self._t0
+        now = time.perf_counter() - self._t0
         rows = []
         for cid, s in status.items():
             if self._filter_ids is not None and cid not in self._filter_ids:
@@ -806,10 +861,25 @@ class CsvLogger:
             }
             rows.append({k: row_data[k] for k in self._fields if k in row_data})
 
-        if rows:
+        if not rows:
+            return
+        if self._write_q is not None:
+            self._write_q.put(rows)
+            with self._lock:
+                self._row_count += len(rows)
+        else:
             with self._lock:
                 self._writer.writerows(rows)
                 self._row_count += len(rows)
+
+    def _writer_loop(self) -> None:
+        assert self._write_q is not None
+        while True:
+            item = self._write_q.get()
+            if item is None:
+                break
+            with self._lock:
+                self._writer.writerows(item)
 
     @property
     def row_count(self) -> int:
@@ -822,7 +892,14 @@ class CsvLogger:
             self._file.flush()
 
     def close(self) -> None:
+        if self._write_q is not None:
+            self._write_q.put(None)
+            if self._writer_thread is not None:
+                self._writer_thread.join(timeout=5.0)
+            self._write_q = None
+            self._writer_thread = None
         with self._lock:
+            self._file.flush()
             self._file.close()
 
     def __enter__(self):

@@ -90,7 +90,7 @@ class MoteusApp:
         default_ids: str = '1',
         default_can_disable_brs: bool = False,
     ):
-        self.manager = ControlManager(cycle_hz=200.0)
+        self.manager = ControlManager(cycle_hz=1000.0, query_profile='lite')
         self._state_q: queue.Queue = queue.Queue(maxsize=200)
         self._tree_rows: Dict[int, str] = {}
         self._prev_state = ManagerState.DISCONNECTED
@@ -108,6 +108,7 @@ class MoteusApp:
         self.var_can_type = tk.StringVar(value=default_can_type)
         self.var_chan      = tk.StringVar(value=default_can_chan)
         self.var_ids       = tk.StringVar(value=default_ids)
+        self.var_query_profile = tk.StringVar(value='lite')
         self.var_status_lbl = tk.StringVar(value='Disconnected')
         self._can_disable_brs = default_can_disable_brs
 
@@ -185,6 +186,13 @@ class MoteusApp:
         ttk.Label(frm, text='IDs:').grid(row=r, column=0, sticky='w', padx=6, pady=3)
         ttk.Entry(frm, textvariable=self.var_ids, width=18).grid(
             row=r, column=1, sticky='ew', padx=6, pady=3)
+
+        r += 1
+        ttk.Label(frm, text='Query:').grid(row=r, column=0, sticky='w', padx=6, pady=3)
+        ttk.Combobox(
+            frm, textvariable=self.var_query_profile, width=12,
+            values=['lite', 'full'], state='readonly',
+        ).grid(row=r, column=1, sticky='ew', padx=6, pady=3)
 
         r += 1
         btn_row = ttk.Frame(frm)
@@ -339,7 +347,9 @@ class MoteusApp:
         r += 1
         ttk.Label(tab, text=(
             'Tip: logging starts immediately; rows accumulate while connected.\n'
-            'Stop before disconnecting to flush and close the file.'
+            'Stop before disconnecting to flush and close the file.\n'
+            'Encoder/abs fields need Query=full (set before Connect). '
+            'lite is faster for default fields.'
         ), foreground='gray', font=('', 8), justify='left').grid(
             row=r, column=0, columnspan=4, sticky='w', padx=8, pady=(4, 8))
 
@@ -409,8 +419,17 @@ class MoteusApp:
         ids = self._parse_ids()
         if ids is None:
             return
+        profile = self.var_query_profile.get().strip() or 'lite'
+        try:
+            self.manager.set_query_profile(profile)
+        except (ValueError, RuntimeError) as e:
+            self._log(f'Query profile: {e}', 'error')
+            return
         self._init_tree_rows(ids)
-        self._log(f'Connecting: type={can_type} chan={can_chan} ids={ids}')
+        self._log(
+            f'Connecting: type={can_type} chan={can_chan} ids={ids} '
+            f'query={profile}'
+        )
         self.manager.connect(
             ids,
             can_type=can_type,
@@ -510,6 +529,20 @@ class MoteusApp:
 
         fields_raw = self.var_csv_fields.get().strip()
         fields = [f.strip() for f in fields_raw.split(',') if f.strip()] or None
+
+        heavy = {
+            'trajectory_complete', 'abs_position', 'encoder_validity',
+            'encoder_0_position', 'encoder_0_velocity',
+            'encoder_1_position', 'encoder_1_velocity',
+            'encoder_2_position', 'encoder_2_velocity',
+        }
+        if fields and any(f in heavy for f in fields):
+            if self.manager.get_query_profile() != 'full':
+                self._log(
+                    'CSV fields include encoder/abs data but Query=lite — '
+                    'those columns will be NaN. Reconnect with Query=full.',
+                    'warn',
+                )
 
         try:
             self._csv_logger = CsvLogger(path, fields=fields)

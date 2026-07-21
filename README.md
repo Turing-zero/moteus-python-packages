@@ -37,10 +37,10 @@ pip install ./moteus
 
 ```bash
 # ssh
-pip install "git+ssh://git@github.com/Turing-zero/moteus-python-packages.git@v0.4.1-tz#subdirectory=moteus"
+pip install "git+ssh://git@github.com/Turing-zero/moteus-python-packages.git@v0.4.2-tz#subdirectory=moteus"
 
 # https
-pip install "git+https://github.com/Turing-zero/moteus-python-packages.git@v0.4.1-tz#subdirectory=moteus"
+pip install "git+https://github.com/Turing-zero/moteus-python-packages.git@v0.4.2-tz#subdirectory=moteus"
 ```
 
 ### 安装 `moteus_gui`（图形界面，可选）
@@ -56,12 +56,12 @@ pip install -e ./moteus_gui   # 再装 moteus_gui
 
 ```bash
 # ssh
-pip install "git+ssh://git@github.com/Turing-zero/moteus-python-packages.git@v0.4.1-tz#subdirectory=moteus"
-pip install "git+ssh://git@github.com/Turing-zero/moteus-python-packages.git@v0.4.1-tz#subdirectory=moteus_gui"
+pip install "git+ssh://git@github.com/Turing-zero/moteus-python-packages.git@v0.4.2-tz#subdirectory=moteus"
+pip install "git+ssh://git@github.com/Turing-zero/moteus-python-packages.git@v0.4.2-tz#subdirectory=moteus_gui"
 
 # https
-pip install "git+https://github.com/Turing-zero/moteus-python-packages.git@v0.4.1-tz#subdirectory=moteus"
-pip install "git+https://github.com/Turing-zero/moteus-python-packages.git@v0.4.1-tz#subdirectory=moteus_gui"
+pip install "git+https://github.com/Turing-zero/moteus-python-packages.git@v0.4.2-tz#subdirectory=moteus"
+pip install "git+https://github.com/Turing-zero/moteus-python-packages.git@v0.4.2-tz#subdirectory=moteus_gui"
 ```
 
 ## CAN 适配器支持

@@ -35,7 +35,7 @@ ALL = [
     'SubframeType', 'RegisterSubframe', 'ErrorSubframe', 'StreamSubframe',
     'Subframe', 'parse_frame',
     'ParsedRegisters', 'parse_registers', 'scale_register',
-    'ControlManager', 'ControllerStatus', 'CsvLogger',
+    'ControlManager', 'ControllerStatus', 'CsvLogger', 'make_query_resolution',
 ]
 from moteus.candle import Candle
 from moteus.candle_device import CandleDevice
@@ -64,7 +64,8 @@ from moteus.moteus import (
     move_to,
     TRANSPORT_FACTORIES)
 from moteus.protocol import ParsedRegisters, parse_registers, scale_register
-from moteus.control_manager import ControlManager, ControllerStatus, CsvLogger
+from moteus.control_manager import (
+    ControlManager, ControllerStatus, CsvLogger, make_query_resolution)
 
 try:
     from moteus.version import VERSION
