@@ -31,17 +31,33 @@ cd moteus-python-packages
 pip install ./moteus
 ```
 
-### 方式二：直接从 Git 安装
+### 方式二：直接从 Git 安装（跟踪 `main` 最新代码）
 
-通过 URL 的 `#subdirectory=` 片段指定子目录：
+通过 URL 的 `@main` 指定分支，`#subdirectory=` 指定子目录。Windows / Linux / macOS 均可直接使用：
 
 ```bash
-# ssh
-pip install "git+ssh://git@github.com/Turing-zero/moteus-python-packages.git@v0.4.2-tz#subdirectory=moteus"
-
 # https
-pip install "git+https://github.com/Turing-zero/moteus-python-packages.git@v0.4.2-tz#subdirectory=moteus"
+pip install "git+https://github.com/Turing-zero/moteus-python-packages.git@main#subdirectory=moteus"
 ```
+```bash
+# ssh
+pip install "git+ssh://git@github.com/Turing-zero/moteus-python-packages.git@main#subdirectory=moteus"
+```
+
+### 方式三：固定版本 tag 安装（可复现）
+
+将 `@main` 换成具体 tag（例如当前发布版 `v0.4.2-tz`），可锁定到某次发版：
+
+```bash
+# https
+pip install "git+https://github.com/Turing-zero/moteus-python-packages.git@v0.4.3-tz#subdirectory=moteus"
+```
+```bash
+# ssh
+pip install "git+ssh://git@github.com/Turing-zero/moteus-python-packages.git@v0.4.3-tz#subdirectory=moteus"
+```
+
+可用 tag 列表见仓库 [Releases / Tags](https://github.com/Turing-zero/moteus-python-packages/tags)。
 
 ### 安装 `moteus_gui`（图形界面，可选）
 
@@ -52,16 +68,30 @@ pip install -e ./moteus       # 先装好 moteus（若尚未安装）
 pip install -e ./moteus_gui   # 再装 moteus_gui
 ```
 
-也可以直接从 Git 安装：
+也可以直接从 Git 安装（跟踪 `main`）：
 
 ```bash
-# ssh
-pip install "git+ssh://git@github.com/Turing-zero/moteus-python-packages.git@v0.4.2-tz#subdirectory=moteus"
-pip install "git+ssh://git@github.com/Turing-zero/moteus-python-packages.git@v0.4.2-tz#subdirectory=moteus_gui"
-
 # https
-pip install "git+https://github.com/Turing-zero/moteus-python-packages.git@v0.4.2-tz#subdirectory=moteus"
-pip install "git+https://github.com/Turing-zero/moteus-python-packages.git@v0.4.2-tz#subdirectory=moteus_gui"
+pip install "git+https://github.com/Turing-zero/moteus-python-packages.git@main#subdirectory=moteus"
+pip install "git+https://github.com/Turing-zero/moteus-python-packages.git@main#subdirectory=moteus_gui"
+```
+```bash
+# ssh
+pip install "git+ssh://git@github.com/Turing-zero/moteus-python-packages.git@main#subdirectory=moteus"
+pip install "git+ssh://git@github.com/Turing-zero/moteus-python-packages.git@main#subdirectory=moteus_gui"
+```
+
+或固定到同一 tag：
+
+```bash
+# https
+pip install "git+https://github.com/Turing-zero/moteus-python-packages.git@v0.4.3-tz#subdirectory=moteus"
+pip install "git+https://github.com/Turing-zero/moteus-python-packages.git@v0.4.3-tz#subdirectory=moteus_gui"
+```
+```bash
+# ssh
+pip install "git+ssh://git@github.com/Turing-zero/moteus-python-packages.git@v0.4.3-tz#subdirectory=moteus"
+pip install "git+ssh://git@github.com/Turing-zero/moteus-python-packages.git@v0.4.3-tz#subdirectory=moteus_gui"
 ```
 
 ## CAN 适配器支持

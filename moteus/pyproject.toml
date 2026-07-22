@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "moteus"
-version = "0.4.2+tz"
+version = "0.4.3+tz"
 description = "moteus brushless controller library and tools"
 readme = "README.md"
 license = {text = "Apache-2.0"}

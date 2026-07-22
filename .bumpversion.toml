@@ -1,0 +1,49 @@
+[tool.bumpversion]
+current_version = "0.4.3+tz"
+commit = true
+tag = true
+message = "Bump version: {current_version} → {new_version}"
+tag_name = "v{new_major}.{new_minor}.{new_patch}-tz"
+tag_message = "Release {new_version}"
+parse = """(?x)
+    (?P<major>0|[1-9]\\d*)\\.
+    (?P<minor>0|[1-9]\\d*)\\.
+    (?P<patch>0|[1-9]\\d*)
+    \\+tz
+"""
+serialize = ["{major}.{minor}.{patch}+tz"]
+
+[[tool.bumpversion.files]]
+filename = "moteus/pyproject.toml"
+search = 'version = "{current_version}"'
+replace = 'version = "{new_version}"'
+
+[[tool.bumpversion.files]]
+filename = "moteus/setup.cfg"
+search = "version = {current_version}"
+replace = "version = {new_version}"
+
+[[tool.bumpversion.files]]
+filename = "moteus/moteus/version.py"
+search = 'VERSION="{current_version}"'
+replace = 'VERSION="{new_version}"'
+
+[[tool.bumpversion.files]]
+filename = "moteus_gui/pyproject.toml"
+search = 'version = "{current_version}"'
+replace = 'version = "{new_version}"'
+
+[[tool.bumpversion.files]]
+filename = "moteus_gui/pyproject.toml"
+search = '"moteus>={current_major}.{current_minor}.{current_patch},<0.5"'
+replace = '"moteus>={new_major}.{new_minor}.{new_patch},<0.5"'
+
+[[tool.bumpversion.files]]
+filename = "moteus_gui/moteus_gui/version.py"
+search = 'VERSION = "{current_version}"'
+replace = 'VERSION = "{new_version}"'
+
+[[tool.bumpversion.files]]
+filename = "README.md"
+search = "@v{current_major}.{current_minor}.{current_patch}-tz"
+replace = "@v{new_major}.{new_minor}.{new_patch}-tz"

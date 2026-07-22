@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "moteus_gui"
-version = "0.4.2+tz"
+version = "0.4.3+tz"
 description = "moteus brushless controller graphical user interfaces"
 readme = "README.md"
 license = {text = "Apache-2.0"}
@@ -18,7 +18,7 @@ classifiers = [
     "Programming Language :: Python :: 3",
 ]
 dependencies = [
-    "moteus>=0.4.2,<0.5",
+    "moteus>=0.4.3,<0.5",
     "candle-api==0.0.9",
     "asyncqt>=0.8",
     "matplotlib>=3.9",
