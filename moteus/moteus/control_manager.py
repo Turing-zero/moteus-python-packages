@@ -28,6 +28,7 @@ import csv
 import dataclasses
 import math
 import queue
+import sys
 import threading
 import time
 from enum import Enum, auto
@@ -109,6 +110,34 @@ class _CommandItem:
 
     # rezero
     rezero_pos: Optional[float] = None
+
+
+class _WindowsTimerResolution:
+    """Raise Windows system timer to 1 ms for the control-loop thread.
+
+    asyncio.sleep() and the event loop scheduler use the OS timer.  On Windows
+    the default resolution is often 15.625 ms unless timeBeginPeriod(1) has
+    been called.  That caps ControlManager at ~64 Hz even when transport.cycle()
+    only takes ~1 ms — measure_transport_latency.py looks fine while CSV logs
+    show ~15 ms spacing.  Some machines (often Intel laptops with audio/GPU
+    drivers) already run at 1 ms; others (many AMD desktops) stay at 15.6 ms.
+    """
+
+    def __init__(self) -> None:
+        self._winmm: Any = None
+
+    def enable(self) -> None:
+        if sys.platform != 'win32' or self._winmm is not None:
+            return
+        import ctypes
+        self._winmm = ctypes.WinDLL('winmm')
+        self._winmm.timeBeginPeriod(1)
+
+    def disable(self) -> None:
+        if self._winmm is None:
+            return
+        self._winmm.timeEndPeriod(1)
+        self._winmm = None
 
 
 def make_query_resolution(profile: str = 'full') -> QueryResolution:
@@ -481,6 +510,8 @@ class ControlManager:
         can_chan: Optional[str],
         can_disable_brs: bool,
     ) -> None:
+        timer_res = _WindowsTimerResolution()
+        timer_res.enable()
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         self._loop = loop
@@ -506,6 +537,7 @@ class ControlManager:
             except Exception:
                 pass
             loop.close()
+            timer_res.disable()
             with self._state_lock:
                 if self._state == ManagerState.CONNECTED:
                     self._state = ManagerState.DISCONNECTED
@@ -573,14 +605,13 @@ class ControlManager:
 
         persistent_cmds: Dict[str, _CommandItem] = {}
         one_shot: Dict[int, _CommandItem] = {}
-        loop = asyncio.get_event_loop()
 
         # Keep transport transactions bounded so disconnect can terminate
         # promptly even if a backend call blocks unexpectedly.
         cycle_timeout = max(0.05, self._cycle_period_s * 2.0)
 
         while not stop_event.is_set():
-            t0 = loop.time()
+            t0 = time.perf_counter()
 
             # Drain command queue
             while True:
@@ -614,7 +645,7 @@ class ControlManager:
                 except Exception:
                     pass
 
-            elapsed = loop.time() - t0
+            elapsed = time.perf_counter() - t0
             await asyncio.sleep(max(0.0, self._cycle_period_s - elapsed))
 
     def _update_status(self, results: Any) -> None:
