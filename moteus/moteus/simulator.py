@@ -137,6 +137,7 @@ class ControllerState:
     cmd_feedforward: float = 0.0
     cmd_kp_scale: float = 1.0
     cmd_kd_scale: float = 1.0
+    cmd_kiv_scale: float = 1.0
     cmd_max_torque: float = 5.0
     cmd_stop_position: float = math.nan
     cmd_velocity_limit: float = math.nan
@@ -145,7 +146,12 @@ class ControllerState:
     # 物理仿真参数
     kp: float = 10.0        # 位置增益 (rev/s / rev)
     kd: float = 0.5         # 速度阻尼 (rev/s² per rev/s error)
+    ki: float = 0.0         # 速度积分增益（默认 0 禁用，与固件 ki_velocity 一致）
+    ilimit: float = 0.0     # 速度积分限幅（Nm，0 = 积分钳零，与固件 ilimit_velocity 一致）
     inertia: float = 0.05   # 等效惯量 (rev/s² per Nm)
+
+    # 内部状态
+    vel_integral: float = 0.0  # 速度误差积分（对应固件 velocity_integral_Nm）
 
     _last_t: float = dataclasses.field(default_factory=time.monotonic)
 
@@ -159,6 +165,7 @@ class ControllerState:
         if self.mode in (int(Mode.STOPPED), int(Mode.FAULT)):
             self.velocity = 0.0
             self.torque = 0.0
+            self.vel_integral = 0.0
             self.trajectory_complete = 0
             return
 
@@ -192,7 +199,23 @@ class ControllerState:
             desired_vel = max(-vl, min(vl, desired_vel))
 
         vel_err = desired_vel - self.velocity
-        torque_raw = kd * vel_err + self.cmd_feedforward
+
+        # 速度环积分（对应固件 ki_velocity / ilimit_velocity，默认禁用）
+        ki_eff = self.ki * self.cmd_kiv_scale
+        if ki_eff != 0.0 and self.ilimit > 0.0:
+            vi_old = self.vel_integral
+            vi_new = max(-self.ilimit,
+                         min(self.ilimit, vi_old + vel_err * ki_eff * dt))
+            torque_raw = kd * vel_err + vi_new + self.cmd_feedforward
+            # 力矩饱和且积分继续推向饱和方向时冻结积分（简化条件积分）
+            if abs(torque_raw) > self.cmd_max_torque and \
+                    (vi_new - vi_old) * torque_raw > 0.0:
+                vi_new = vi_old
+                torque_raw = kd * vel_err + vi_old + self.cmd_feedforward
+            self.vel_integral = vi_new
+        else:
+            self.vel_integral = 0.0
+            torque_raw = kd * vel_err + self.cmd_feedforward
 
         # 扭矩限幅
         torque_raw = max(-self.cmd_max_torque, min(self.cmd_max_torque, torque_raw))
@@ -225,6 +248,9 @@ class ControllerState:
         """将上位机写入的寄存器应用到状态机。"""
         if Register.MODE in writes:
             new_mode = int(writes[Register.MODE])
+            if new_mode != self.mode:
+                # 与固件一致：任何模式切换都清零位置环/速度环积分
+                self.vel_integral = 0.0
             self.mode = new_mode
             if new_mode == int(Mode.STOPPED):
                 self.velocity = 0.0
@@ -236,6 +262,8 @@ class ControllerState:
             Register.COMMAND_FEEDFORWARD_TORQUE:'cmd_feedforward',
             Register.COMMAND_KP_SCALE:          'cmd_kp_scale',
             Register.COMMAND_KD_SCALE:          'cmd_kd_scale',
+            Register.COMMAND_KIV_SCALE:         'cmd_kiv_scale',
+            Register.COMMAND_WITHIN_KIV_SCALE:  'cmd_kiv_scale',
             Register.COMMAND_POSITION_MAX_TORQUE:'cmd_max_torque',
             Register.COMMAND_STOP_POSITION:     'cmd_stop_position',
             Register.COMMAND_VELOCITY_LIMIT:    'cmd_velocity_limit',

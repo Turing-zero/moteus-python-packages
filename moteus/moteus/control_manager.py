@@ -84,6 +84,7 @@ class _CommandItem:
     # position / stay_within / zero_vel shared
     kp_scale: Optional[float] = None
     kd_scale: Optional[float] = None
+    kiv_scale: Optional[float] = None
     maximum_torque: Optional[float] = None
     feedforward_torque: Optional[float] = None
     watchdog_timeout: Optional[float] = None
@@ -343,6 +344,7 @@ class ControlManager:
         feedforward_torque: Optional[float] = None,
         kp_scale: Optional[float] = None,
         kd_scale: Optional[float] = None,
+        kiv_scale: Optional[float] = None,
         maximum_torque: Optional[float] = None,
         stop_position: Optional[float] = None,
         watchdog_timeout: Optional[float] = None,
@@ -362,7 +364,7 @@ class ControlManager:
             'position', list(controller_ids),
             position=position, velocity=velocity,
             feedforward_torque=feedforward_torque,
-            kp_scale=kp_scale, kd_scale=kd_scale,
+            kp_scale=kp_scale, kd_scale=kd_scale, kiv_scale=kiv_scale,
             maximum_torque=maximum_torque,
             stop_position=stop_position,
             watchdog_timeout=watchdog_timeout,
@@ -425,6 +427,7 @@ class ControlManager:
         feedforward_torque: Optional[float] = None,
         kp_scale: Optional[float] = None,
         kd_scale: Optional[float] = None,
+        kiv_scale: Optional[float] = None,
         maximum_torque: Optional[float] = None,
         watchdog_timeout: Optional[float] = None,
         persistent: bool = True,
@@ -441,7 +444,7 @@ class ControlManager:
             'stay_within', list(controller_ids),
             lower_bound=lower_bound, upper_bound=upper_bound,
             feedforward_torque=feedforward_torque,
-            kp_scale=kp_scale, kd_scale=kd_scale,
+            kp_scale=kp_scale, kd_scale=kd_scale, kiv_scale=kiv_scale,
             maximum_torque=maximum_torque,
             watchdog_timeout=watchdog_timeout,
             persistent=persistent, key=key,
@@ -454,6 +457,7 @@ class ControlManager:
         feedforward_torque: Optional[float] = None,
         kp_scale: Optional[float] = None,
         kd_scale: Optional[float] = None,
+        kiv_scale: Optional[float] = None,
         maximum_torque: Optional[float] = None,
         watchdog_timeout: Optional[float] = None,
         persistent: bool = True,
@@ -474,6 +478,7 @@ class ControlManager:
             feedforward_torque=feedforward_torque,
             kp_scale=kp_scale,
             kd_scale=kd_scale,
+            kiv_scale=kiv_scale,
             maximum_torque=maximum_torque,
             watchdog_timeout=watchdog_timeout,
             persistent=persistent, key=key,
@@ -759,6 +764,7 @@ def _build_cmd(ctrl: Controller, item: Optional[_CommandItem]):
             position='position', velocity='velocity',
             feedforward_torque='feedforward_torque',
             kp_scale='kp_scale', kd_scale='kd_scale',
+            kiv_scale='kiv_scale',
             maximum_torque='maximum_torque',
             stop_position='stop_position',
             watchdog_timeout='watchdog_timeout',
@@ -788,6 +794,7 @@ def _build_cmd(ctrl: Controller, item: Optional[_CommandItem]):
             lower_bound='lower_bound', upper_bound='upper_bound',
             feedforward_torque='feedforward_torque',
             kp_scale='kp_scale', kd_scale='kd_scale',
+            kiv_scale='kiv_scale',
             maximum_torque='maximum_torque',
             watchdog_timeout='watchdog_timeout',
         ))

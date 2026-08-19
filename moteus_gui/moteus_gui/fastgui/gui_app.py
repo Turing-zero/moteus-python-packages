@@ -117,6 +117,7 @@ class MoteusApp:
         self.var_pos_vel   = tk.StringVar(value='')     # feed-forward velocity
         self.var_pos_kp    = tk.StringVar(value='')
         self.var_pos_kd    = tk.StringVar(value='')
+        self.var_pos_kiv   = tk.StringVar(value='')     # velocity-I gain scale
         self.var_pos_trq   = tk.StringVar(value='')
         self.var_pos_persist = tk.BooleanVar(value=True)
         self.var_rezero    = tk.StringVar(value='0.0')
@@ -124,6 +125,7 @@ class MoteusApp:
         # Velocity tab
         self.var_vel_tgt   = tk.StringVar(value='1.0')  # target velocity
         self.var_vel_kd    = tk.StringVar(value='')
+        self.var_vel_kiv   = tk.StringVar(value='')     # velocity-I gain scale
         self.var_vel_trq   = tk.StringVar(value='')
         self.var_vel_persist = tk.BooleanVar(value=True)
 
@@ -251,6 +253,7 @@ class MoteusApp:
             ('FF vel:',     self.var_pos_vel, 7),
             ('kp_scale:',   self.var_pos_kp, 6),
             ('kd_scale:',   self.var_pos_kd, 6),
+            ('kiv_scale:',  self.var_pos_kiv, 6),
         ]
         for i, (lbl, var, w) in enumerate(pos_fields):
             ttk.Label(tab, text=lbl).grid(row=r, column=i*2, sticky='e',
@@ -291,6 +294,12 @@ class MoteusApp:
             row=r, column=6, padx=4)
         ttk.Button(tab, text='Send Velocity', command=self._on_send_velocity).grid(
             row=r, column=7, columnspan=3, padx=6, pady=4, sticky='ew')
+
+        r += 1
+        ttk.Label(tab, text='kiv_scale:').grid(row=r, column=0, sticky='e',
+                                                padx=(6, 2), pady=2)
+        ttk.Entry(tab, textvariable=self.var_vel_kiv, width=6).grid(
+            row=r, column=1, sticky='ew', padx=(0, 4), pady=2)
 
     # ── CSV Log tab ───────────────────────────────────────────────────────────
 
@@ -479,6 +488,7 @@ class MoteusApp:
             velocity=_opt_float(self.var_pos_vel),
             kp_scale=_opt_float(self.var_pos_kp),
             kd_scale=_opt_float(self.var_pos_kd),
+            kiv_scale=_opt_float(self.var_pos_kiv),
             maximum_torque=_opt_float(self.var_pos_trq),
             persistent=persistent,
         )
@@ -501,6 +511,7 @@ class MoteusApp:
         self.manager.command_velocity(
             ids, velocity=vel,
             kd_scale=_opt_float(self.var_vel_kd),
+            kiv_scale=_opt_float(self.var_vel_kiv),
             maximum_torque=_opt_float(self.var_vel_trq),
             persistent=persistent,
         )

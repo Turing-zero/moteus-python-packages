@@ -284,6 +284,7 @@ with patch_singleton([1, 2]):
 | `feedforward_torque` | 前馈力矩（N·m） |
 | `kp_scale` | 位置增益缩放（0-1） |
 | `kd_scale` | 速度增益缩放（0-1） |
+| `kiv_scale` | 速度积分增益缩放（对应固件 `servo.ki_velocity`，需固件寄存器映射版本 ≥ 6） |
 | `maximum_torque` | 最大力矩限制（N·m） |
 | `stop_position` | 到达后停止的位置（转数） |
 | `watchdog_timeout` | 看门狗超时（s），`0` 表示禁用 |
