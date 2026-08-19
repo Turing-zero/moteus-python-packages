@@ -77,6 +77,7 @@ class Register(enum.IntEnum):
     COMMAND_ILIMIT_SCALE = 0x02b
     COMMAND_FIXED_CURRENT_OVERRIDE = 0x02c
     COMMAND_IGNORE_POSITION_BOUNDS = 0x02d
+    COMMAND_KIV_SCALE = 0x02e
 
     POSITION_KP = 0x030
     POSITION_KI = 0x031
@@ -100,6 +101,7 @@ class Register(enum.IntEnum):
     COMMAND_WITHIN_TIMEOUT = 0x046
     COMMAND_WITHIN_ILIMIT_SCALE = 0x047
     COMMAND_WITHIN_IGNORE_POSITION_BOUNDS = 0x048
+    COMMAND_WITHIN_KIV_SCALE = 0x049
 
     ENCODER_0_POSITION = 0x050
     ENCODER_0_VELOCITY = 0x051
@@ -386,7 +388,9 @@ def scale_register(register, resolution, value):
         return _scale_mapped(value, resolution, 0.5, 0.1, 0.001)
     elif register == Register.COMMAND_ILIMIT_SCALE:
         return _scale_mapped(value, resolution, 1.0 / 127.0, 1.0 / 32767.0, 1.0 / 2147483647.0)
-    # Stay-within command registers (0x040-0x048)
+    elif register == Register.COMMAND_KIV_SCALE:
+        return _scale_mapped(value, resolution, 1.0 / 127.0, 1.0 / 32767.0, 1.0 / 2147483647.0)
+    # Stay-within command registers (0x040-0x049)
     elif register == Register.COMMAND_WITHIN_LOWER_BOUND:
         return _scale_mapped(value, resolution, 0.01, 0.0001, 0.00001)
     elif register == Register.COMMAND_WITHIN_UPPER_BOUND:
@@ -402,6 +406,8 @@ def scale_register(register, resolution, value):
     elif register == Register.COMMAND_WITHIN_TIMEOUT:
         return _scale_mapped(value, resolution, 0.01, 0.001, 0.000001)
     elif register == Register.COMMAND_WITHIN_ILIMIT_SCALE:
+        return _scale_mapped(value, resolution, 1.0 / 127.0, 1.0 / 32767.0, 1.0 / 2147483647.0)
+    elif register == Register.COMMAND_WITHIN_KIV_SCALE:
         return _scale_mapped(value, resolution, 1.0 / 127.0, 1.0 / 32767.0, 1.0 / 2147483647.0)
     else:
         # Unknown register, return raw value with NaN handling

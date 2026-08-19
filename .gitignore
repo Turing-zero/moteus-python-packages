@@ -5,3 +5,6 @@ build
 .vscode
 temp
 logs/
+
+.graphflow-cache/
+graphflow-out/

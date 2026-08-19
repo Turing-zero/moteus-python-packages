@@ -119,6 +119,7 @@ class PositionResolution:
     ilimit_scale = mp.F32
     fixed_current_override = mp.F32
     ignore_position_bounds = mp.F32
+    kiv_scale = mp.F32
 
 
 class VFOCResolution:
@@ -621,6 +622,7 @@ class Controller:
                       ilimit_scale=None,
                       fixed_current_override=None,
                       ignore_position_bounds=None,
+                      kiv_scale=None,
                       query=False,
                       query_override=None):
         """Return a moteus.Command structure with data necessary to send a
@@ -645,6 +647,7 @@ class Controller:
             pr.ilimit_scale if ilimit_scale is not None else mp.IGNORE,
             pr.fixed_current_override if fixed_current_override is not None else mp.IGNORE,
             pr.ignore_position_bounds if ignore_position_bounds is not None else mp.IGNORE,
+            pr.kiv_scale if kiv_scale is not None else mp.IGNORE,
         ]
 
         writer = Writer(data_buf)
@@ -683,6 +686,8 @@ class Controller:
             writer.write_current(fixed_current_override, pr.fixed_current_override)
         if combiner.maybe_write():
             writer.write_int(ignore_position_bounds, pr.ignore_position_bounds)
+        if combiner.maybe_write():
+            writer.write_pwm(kiv_scale, pr.kiv_scale)
 
         self._format_query(query, query_override, data_buf, result)
 
@@ -850,6 +855,7 @@ class Controller:
             watchdog_timeout=None,
             ilimit_scale=None,
             ignore_position_bounds=None,
+            kiv_scale=None,
             query=False,
             query_override=None):
         """Return a moteus.Command structure with data necessary to send a
@@ -869,6 +875,7 @@ class Controller:
             pr.watchdog_timeout if watchdog_timeout is not None else mp.IGNORE,
             pr.ilimit_scale if ilimit_scale is not None else mp.IGNORE,
             pr.ignore_position_bounds if ignore_position_bounds is not None else mp.IGNORE,
+            pr.kiv_scale if kiv_scale is not None else mp.IGNORE,
         ]
 
         writer = Writer(data_buf)
@@ -898,6 +905,8 @@ class Controller:
             writer.write_pwm(ilimit_scale, pr.ilimit_scale)
         if combiner.maybe_write():
             writer.write_int(ignore_position_bounds, pr.ignore_position_bounds)
+        if combiner.maybe_write():
+            writer.write_pwm(kiv_scale, pr.kiv_scale)
 
         self._format_query(query, query_override, data_buf, result)
 
