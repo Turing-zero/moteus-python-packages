@@ -1,4 +1,23 @@
-# scripts —— servo_stats 日志分析工具
+# scripts —— moteus 调试与日志分析工具
+
+## 临时多电机位置测试 GUI
+
+安装本仓库的 `moteus` 包依赖后运行（Linux 桌面还需要 Tkinter）：
+
+```bash
+python3 -m pip install -e ./moteus
+python3 scripts/multi_motor_gui.py --can-type socketcan --can-chan can0
+# fdcanusb: --can-type fdcanusb --can-chan /dev/ttyUSB0
+# candle:   --can-type candle --can-chan 0
+```
+
+在界面中填写逗号分隔的 ID（例如 `1,2,3`），或设置范围后点“自动探测”，再点“连接”。每个电机先设置 `min` / `max`（单位 rev），确认当前位置在范围内，再勾选“使能”并拖动位置滑条；目标框也可输入精确位置，按回车生效。全局速度默认 `0.5 rev/s`、加速度默认 `2 rev/s²`，均可修改，也可用 `--vel-limit` 和 `--accel-limit` 设置启动值。
+
+GUI 会把目标位置限制在各电机的区间内；修改限位、参数无效、反馈超时或报告故障时会停止相应电机。断开和关闭窗口时发送停止帧。限位是此工具的软件命令限位，使用前仍应确认机械行程、控制器配置和急停装置。
+
+---
+
+## servo_stats 日志分析工具
 
 针对 moteus `servo_stats` CSV 日志的两个电机异常分析脚本。两者互补：
 
