@@ -12,6 +12,7 @@ Usage::
 
     python -m moteus_gui.fastgui.gui_app
     python -m moteus_gui.fastgui.gui_app --can-type socketcan --can-chan can0 --ids 1,2,3
+    python -m moteus_gui.fastgui.gui_app --can-type pcan --can-chan PCAN_USBBUS1 --ids 1
     python -m moteus_gui.fastgui.gui_app --can-type fdcanusb --can-chan /dev/ttyUSB0 --ids 1
     python -m moteus_gui.fastgui.gui_app --can-type candle --can-chan 0 --ids 1
 
@@ -175,7 +176,7 @@ class MoteusApp:
         r = 0
         ttk.Label(frm, text='Interface:').grid(row=r, column=0, sticky='w', padx=6, pady=3)
         cb = ttk.Combobox(frm, textvariable=self.var_can_type, width=12,
-                          values=['socketcan', 'fdcanusb', 'candle'], state='readonly')
+                          values=['socketcan', 'pcan', 'fdcanusb', 'candle'], state='readonly')
         cb.grid(row=r, column=1, sticky='ew', padx=6, pady=3)
         cb.bind('<<ComboboxSelected>>', self._on_iface_changed)
 
@@ -406,7 +407,8 @@ class MoteusApp:
     # ── Event handlers ────────────────────────────────────────────────────────
 
     def _on_iface_changed(self, _event=None) -> None:
-        defaults = {'socketcan': 'can0', 'fdcanusb': '/dev/ttyUSB0', 'candle': '0'}
+        defaults = {'socketcan': 'can0', 'pcan': 'PCAN_USBBUS1',
+                    'fdcanusb': '/dev/ttyUSB0', 'candle': '0'}
         iface = self.var_can_type.get()
         if self.var_chan.get() in defaults.values():
             self.var_chan.set(defaults.get(iface, ''))
@@ -691,10 +693,10 @@ def main() -> None:
         description='moteus controller GUI',
     )
     parser.add_argument('--can-type', default='socketcan',
-                        choices=['socketcan', 'fdcanusb', 'candle'], metavar='TYPE',
+                        choices=['socketcan', 'pcan', 'fdcanusb', 'candle'], metavar='TYPE',
                         help='CAN interface type (default: socketcan)')
     parser.add_argument('--can-chan', default='can0', metavar='CHAN',
-                        help='channel: can0 / /dev/ttyUSB0 / 0')
+                        help='channel: can0 / PCAN_USBBUS1 / /dev/ttyUSB0 / 0')
     parser.add_argument('--ids', default='1', metavar='IDS',
                         help='comma-separated controller IDs (default: 1)')
     parser.add_argument('--can-disable-brs', action='store_true',

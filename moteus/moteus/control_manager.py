@@ -233,9 +233,11 @@ class ControlManager:
 
         Args:
             controller_ids: CAN IDs to manage, e.g. ``[1, 2, 3]``
-            can_type: ``'socketcan'`` | ``'fdcanusb'`` | ``'candle'``
-            can_iface: python-can interface string (ignored for fdcanusb/candle)
+            can_type: ``'socketcan'`` | ``'pcan'`` | ``'fdcanusb'`` | ``'candle'``
+            can_iface: python-can interface string (ignored for fdcanusb/candle;
+                       defaults to ``can_type`` for ``'pcan'``)
             can_chan: Channel.  socketcan → ``'can0'``;
+                      pcan → ``'PCAN_USBBUS1'``;
                       fdcanusb → ``'/dev/ttyUSB0'`` or ``'COM3'``;
                       candle → integer index string ``'0'``
             can_disable_brs: Disable CAN-FD BRS flag on transmit frames.
@@ -593,6 +595,8 @@ class ControlManager:
                 kwargs['channel'] = can_chan
             if can_iface:
                 kwargs['interface'] = can_iface
+            elif can_type == 'pcan':
+                kwargs['interface'] = 'pcan'
             if can_disable_brs:
                 kwargs['disable_brs'] = True
             device = PythonCanDevice(**kwargs)

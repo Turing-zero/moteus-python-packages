@@ -100,12 +100,57 @@ pip install "git+ssh://git@github.com/Turing-zero/moteus-python-packages.git@v0.
 |--------|------|----------|
 | `fdcanusb` | Linux / Windows / macOS | `--fdcanusb /dev/ttyUSB0` |
 | `socketcan` | Linux | `--can-iface socketcan --can-chan can0` |
+| `pcan`（PEAK PCAN-Basic） | Linux / Windows | `--can-iface pcan --can-chan PCAN_USBBUS1` |
 | `candle` / CANable FD | Windows / macOS | `--can-iface candle --can-chan 0` |
 
 说明：
 
 - Candle 在 Windows/macOS 上自动枚举。
 - 在 Linux 上，Candle 通常以 `socketcan` 接口呈现，由 `socketcan` 传输层处理。
+
+### PEAK（PCAN-USB FD 等）在 Linux 上的使用
+
+Linux 下 PEAK 适配器有两种驱动，二选一即可：
+
+**方式 A：socketcan（设备呈现为 `can0` / `can1`）**
+
+以下两种驱动都会让设备呈现为 socketcan 接口，用法相同：
+
+- 主线内核自带的 `peak_usb` / `peak_pciefd`（免安装）；
+- PEAK 官方 `peak-linux-driver`（如 8.18.0）以 netdev 模式编译安装（`make NET=NETDEV_SUPPORT`）。
+
+```bash
+moteus_tool --can-iface socketcan --can-chan can0 -t 1 --info
+moteus_fastgui --can-type socketcan --can-chan can0 --ids 1
+```
+
+打开接口时会通过 `ip -json -details link show canX` 识别 PEAK 设备（`bittiming_const` 名称为 `pcan` / `pcan_usb_*` / `peak_canfd`，或 sysfs 驱动为 `peak_*`），并在 CAN 时钟为 80MHz 整数倍时自动按 moteus 推荐时序配置（1Mbps / 5Mbps，自动 bus-off 恢复），等价于：
+
+```bash
+sudo ip link set can0 down
+sudo ip link set can0 type can \
+    tq 12 prop-seg 25 phase-seg1 25 phase-seg2 29 sjw 10 \
+    dtq 12 dprop-seg 6 dphase-seg1 2 dphase-seg2 7 dsjw 12 \
+    fd on restart-ms 1000
+sudo ip link set can0 up
+```
+
+- 自动配置需要 root 或免密 `sudo`；无权限时会打印警告，此时请手动执行上面的命令。
+- 若显式传入 `bitrate` / `data_bitrate` / `sample_point` / `data_sample_point`，则不使用 PEAK 预设，按传入参数配置。
+- 若预设时序被驱动拒绝，会打印警告并回退为 `bitrate 1000000 dbitrate 5000000 fd on`。
+- 确认生效：`ip -details link show can0`，应看到 `bitrate 1000000 sample-point 0.637`、`dbitrate 5000000 dsample-point 0.562` 及 `restart-ms 1000`。
+
+**方式 B：PEAK 官方驱动 chardev 模式 + PCAN-Basic（设备呈现为 `/dev/pcan*`）**
+
+需先以 chardev 模式安装 PEAK 官方驱动（`peak-linux-driver` 默认 `make` 即为此模式，出现 `/dev/pcan*`，没有 `can0`）以及 PCAN-Basic for Linux（`libpcanbasic.so`），然后按 `pcan` 接口使用：
+
+```bash
+moteus_tool --can-iface pcan --can-chan PCAN_USBBUS1 -t 1 --info
+moteus_fastgui --can-type pcan --can-chan PCAN_USBBUS1 --ids 1
+```
+
+- 默认时序：80MHz 时钟，1Mbps / 5Mbps，采样点 66%。
+- 自动枚举时会跳过不支持 CAN-FD 的 PEAK 设备（如老款 PCAN-USB），moteus 需要 CAN-FD。
 
 ## 快速开始
 
@@ -180,6 +225,7 @@ tview --can-iface socketcan --can-chan can0 --can-disable-brs
 moteus_fastgui
 moteus_fastgui --can-type candle --can-chan 0 --ids 1 --can-disable-brs
 moteus_fastgui --can-type socketcan --can-chan can0 --ids 1,2 --can-disable-brs
+moteus_fastgui --can-type pcan --can-chan PCAN_USBBUS1 --ids 1,2
 moteus_fastgui --can-type fdcanusb --can-chan /dev/ttyUSB0 --ids 1,2 --can-disable-brs
 
 # 或直接以模块方式运行：

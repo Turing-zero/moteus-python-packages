@@ -14,6 +14,7 @@
 
 import asyncio
 import collections
+import json
 import os
 import re
 import subprocess
@@ -24,6 +25,52 @@ import typing
 from .transport_device import Frame, FrameFilter, TransportDevice, Subscription
 
 can: typing.Any = None
+
+
+# Linux kernel drivers for PEAK-System adapters (mainline socketcan).
+_PEAK_SOCKETCAN_DRIVERS = ('peak_usb', 'peak_pciefd', 'peak_pci', 'peak_pcmcia')
+
+# Bit timing recommended by mjbots for PEAK CAN-FD adapters (80MHz clock)
+# on Linux: 1Mbps nominal / 5Mbps data, with wide SJW.  The kernel's
+# default sample points do not work reliably with moteus.
+_PEAK_SOCKETCAN_FD_TIMING = [
+    'tq', '12', 'prop-seg', '25', 'phase-seg1', '25', 'phase-seg2', '29',
+    'sjw', '10',
+    'dtq', '12', 'dprop-seg', '6', 'dphase-seg1', '2', 'dphase-seg2', '7',
+    'dsjw', '12',
+    'fd', 'on',
+]
+
+
+def _socketcan_driver(interface: str) -> typing.Optional[str]:
+    """Return the kernel driver name backing a socketcan interface."""
+    path = f'/sys/class/net/{interface}/device/driver'
+    if not os.path.exists(path):
+        return None
+    return os.path.basename(os.path.realpath(path))
+
+
+def _socketcan_info_data(interface: str) -> typing.Dict[str, typing.Any]:
+    """Return iproute2's CAN 'info_data' for an interface ({} on failure)."""
+    try:
+        out = subprocess.run(
+            ['ip', '-json', '-details', 'link', 'show', interface],
+            check=True, capture_output=True, text=True).stdout
+        return json.loads(out)[0]['linkinfo']['info_data']
+    except Exception:
+        return {}
+
+
+def _is_peak_socketcan(interface: str,
+                       info_data: typing.Dict[str, typing.Any]) -> bool:
+    # PEAK's out-of-tree pcan.ko in netdev mode (peak-linux-driver) does
+    # not link the netdev to a sysfs device, but reports "pcan" as its
+    # bittiming_const name.  Mainline drivers report "pcan_usb_fd",
+    # "pcan_usb_pro_fd", "peak_canfd", etc.
+    bt_name = (info_data.get('bittiming_const') or {}).get('name', '')
+    if bt_name.startswith('pcan') or bt_name.startswith('peak'):
+        return True
+    return _socketcan_driver(interface) in _PEAK_SOCKETCAN_DRIVERS
 
 
 def _maybe_start_socketcan(interface: str, bus_kwargs: typing.Dict[str, typing.Any]) -> None:
@@ -80,6 +127,29 @@ def _maybe_start_socketcan(interface: str, bus_kwargs: typing.Dict[str, typing.A
         _run_ip(['ip', 'link', 'set', interface, 'down'], require_success=False)
 
         configure_cmd = ['ip', 'link', 'set', interface, 'type', 'can']
+
+        timing_overridden = any(
+            k in bus_kwargs for k in ['bitrate', 'data_bitrate',
+                                      'sample_point', 'data_sample_point'])
+        if fd and not timing_overridden:
+            info_data = _socketcan_info_data(interface)
+            clock = info_data.get('clock', None)
+            # The preset is expressed in 12.5ns quanta, which requires a
+            # CAN clock that is a multiple of 80MHz.
+            if (_is_peak_socketcan(interface, info_data) and
+                    (not clock or clock % 80000000 == 0)):
+                try:
+                    _run_ip(configure_cmd + _PEAK_SOCKETCAN_FD_TIMING +
+                            ['restart-ms', '1000'], require_success=True)
+                    _run_ip(['ip', 'link', 'set', interface, 'up'],
+                            require_success=True)
+                    return
+                except Exception as e:
+                    import logging
+                    logging.warning(
+                        f"PEAK timing preset failed for {interface}: {e}; "
+                        "falling back to bitrate/dbitrate configuration")
+
         configure_cmd.extend(['bitrate', str(int(bitrate))])
         sample_point_text = _sample_point_text(sample_point)
         if sample_point_text:
@@ -553,6 +623,12 @@ class PythonCanDevice(TransportDevice):
                     _detect_fdcanusb_serials_windows_mac()
 
             for config in available_configs:
+                if config.get('supports_fd', True) is False:
+                    # moteus requires CAN-FD; skip classic-only
+                    # adapters (e.g. PCAN-USB) rather than fail to open
+                    # them with FD timing.
+                    continue
+
                 merged_config = _merge_args(kwargs, config)
 
                 # Try to detect if this is a fdcanusb device
