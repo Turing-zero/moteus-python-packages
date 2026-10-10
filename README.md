@@ -50,11 +50,11 @@ pip install "git+ssh://git@github.com/Turing-zero/moteus-python-packages.git@mai
 
 ```bash
 # https
-pip install "git+https://github.com/Turing-zero/moteus-python-packages.git@v0.4.3-tz#subdirectory=moteus"
+pip install "git+https://github.com/Turing-zero/moteus-python-packages.git@v0.4.4-tz#subdirectory=moteus"
 ```
 ```bash
 # ssh
-pip install "git+ssh://git@github.com/Turing-zero/moteus-python-packages.git@v0.4.3-tz#subdirectory=moteus"
+pip install "git+ssh://git@github.com/Turing-zero/moteus-python-packages.git@v0.4.4-tz#subdirectory=moteus"
 ```
 
 可用 tag 列表见仓库 [Releases / Tags](https://github.com/Turing-zero/moteus-python-packages/tags)。
@@ -85,13 +85,13 @@ pip install "git+ssh://git@github.com/Turing-zero/moteus-python-packages.git@mai
 
 ```bash
 # https
-pip install "git+https://github.com/Turing-zero/moteus-python-packages.git@v0.4.3-tz#subdirectory=moteus"
-pip install "git+https://github.com/Turing-zero/moteus-python-packages.git@v0.4.3-tz#subdirectory=moteus_gui"
+pip install "git+https://github.com/Turing-zero/moteus-python-packages.git@v0.4.4-tz#subdirectory=moteus"
+pip install "git+https://github.com/Turing-zero/moteus-python-packages.git@v0.4.4-tz#subdirectory=moteus_gui"
 ```
 ```bash
 # ssh
-pip install "git+ssh://git@github.com/Turing-zero/moteus-python-packages.git@v0.4.3-tz#subdirectory=moteus"
-pip install "git+ssh://git@github.com/Turing-zero/moteus-python-packages.git@v0.4.3-tz#subdirectory=moteus_gui"
+pip install "git+ssh://git@github.com/Turing-zero/moteus-python-packages.git@v0.4.4-tz#subdirectory=moteus"
+pip install "git+ssh://git@github.com/Turing-zero/moteus-python-packages.git@v0.4.4-tz#subdirectory=moteus_gui"
 ```
 
 ## CAN 适配器支持
