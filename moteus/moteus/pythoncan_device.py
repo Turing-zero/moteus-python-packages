@@ -73,7 +73,8 @@ def _is_peak_socketcan(interface: str,
     return _socketcan_driver(interface) in _PEAK_SOCKETCAN_DRIVERS
 
 
-def _maybe_start_socketcan(interface: str, bus_kwargs: typing.Dict[str, typing.Any]) -> None:
+def _maybe_start_socketcan(interface: str, bus_kwargs: typing.Dict[str, typing.Any],
+                           restart_ms: typing.Optional[int] = None) -> None:
     """Best-effort startup for Linux socketcan interfaces.
 
     If the current process does not have sufficient privileges, this logs a
@@ -109,7 +110,10 @@ def _maybe_start_socketcan(interface: str, bus_kwargs: typing.Dict[str, typing.A
     def _run_ip(args: typing.List[str], require_success: bool) -> None:
         candidates = []
         if os.geteuid() != 0:
-            candidates.append(['sudo'] + args)
+            # Never block on a password prompt without a terminal
+            # (e.g. under systemd or a GUI worker thread).
+            sudo = ['sudo'] if sys.stdin and sys.stdin.isatty() else ['sudo', '-n']
+            candidates.append(sudo + args)
         candidates.append(args)
 
         last_error = None
@@ -140,7 +144,9 @@ def _maybe_start_socketcan(interface: str, bus_kwargs: typing.Dict[str, typing.A
                     (not clock or clock % 80000000 == 0)):
                 try:
                     _run_ip(configure_cmd + _PEAK_SOCKETCAN_FD_TIMING +
-                            ['restart-ms', '1000'], require_success=True)
+                            ['restart-ms', str(int(
+                                1000 if restart_ms is None else restart_ms))],
+                            require_success=True)
                     _run_ip(['ip', 'link', 'set', interface, 'up'],
                             require_success=True)
                     return
@@ -162,6 +168,8 @@ def _maybe_start_socketcan(interface: str, bus_kwargs: typing.Dict[str, typing.A
             data_sample_point_text = _sample_point_text(data_sample_point)
             if data_sample_point_text:
                 configure_cmd.extend(['dsample-point', data_sample_point_text])
+        if restart_ms is not None:
+            configure_cmd.extend(['restart-ms', str(int(restart_ms))])
         _run_ip(configure_cmd, require_success=True)
         _run_ip(['ip', 'link', 'set', interface, 'up'], require_success=True)
     except Exception as e:
@@ -425,6 +433,9 @@ class PythonCanDevice(TransportDevice):
         # Extract fdcanusb serial number before passing kwargs to can.Bus
         self._fdcanusb_serial = kwargs.pop('fdcanusb_serial', None)
 
+        # socketcan bus-off auto restart, applied when we configure the link.
+        restart_ms = kwargs.pop('restart_ms', None)
+
         if ('timing' not in kwargs and
             kwargs.get('interface', can.rc.get('interface', None)) == 'pcan'):
             # We default to the timing that works with moteus and assume
@@ -438,7 +449,7 @@ class PythonCanDevice(TransportDevice):
         if kwargs.get('interface', can.rc.get('interface', None)) == 'socketcan':
             channel = kwargs.get('channel', can.rc.get('channel', None))
             if isinstance(channel, str):
-                _maybe_start_socketcan(channel, kwargs)
+                _maybe_start_socketcan(channel, kwargs, restart_ms=restart_ms)
 
         self._can = can.Bus(*args, **kwargs)
         self._setup = False

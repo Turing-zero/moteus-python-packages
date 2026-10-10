@@ -1,0 +1,15 @@
+# moteus-hold 守护进程参数（安装到 /etc/default/moteus-hold）
+# 修改后执行: sudo systemctl restart moteus-hold
+# 全部参数见: python3 moteus_hold_daemon.py --help
+#
+# 常用:
+#   --channel can1            CAN 接口
+#   --ids 1,2,3               电机 ID
+#   --rate 100                控制频率 Hz
+#   --velocity-limit 0.5      rev/s
+#   --accel-limit 2           rev/s^2
+#   --max-torque 1.0          Nm（不填用控制器配置）
+#   --limit 1:-0.5:0.5        软件限位 ID:MIN:MAX（rev，可重复）
+#   --disable-brs             数据段不提速（整条总线 1 Mbps）
+#   --on-exit none            服务停止时不发 stop，交给 moteus 看门狗
+MOTEUS_HOLD_ARGS="--channel can1 --ids 1,2,3 --rate 100 --velocity-limit 0.5 --accel-limit 2"

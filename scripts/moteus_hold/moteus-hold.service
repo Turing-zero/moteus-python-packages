@@ -1,0 +1,29 @@
+# moteus 位置保持守护进程（由 install.sh 填入 @USER@ 等占位符后安装）
+[Unit]
+Description=moteus position hold daemon
+Documentation=file://@DIR@/README.md
+After=network-pre.target systemd-udev-settle.service
+Wants=network-pre.target
+
+[Service]
+Type=simple
+User=@USER@
+Group=@GROUP@
+EnvironmentFile=-/etc/default/moteus-hold
+ExecStart=@PYTHON@ -u @DIR@/moteus_hold_daemon.py $MOTEUS_HOLD_ARGS
+Restart=always
+RestartSec=2
+TimeoutStopSec=5
+
+# 配置 CAN 接口（ip link set ... down/type/up）只需要 CAP_NET_ADMIN，不用 root/sudo
+AmbientCapabilities=CAP_NET_ADMIN
+CapabilityBoundingSet=CAP_NET_ADMIN
+
+# 调试接口 socket：/run/moteus-hold/ctl.sock，属主为 @USER@
+RuntimeDirectory=moteus-hold
+RuntimeDirectoryMode=0750
+
+Nice=-10
+
+[Install]
+WantedBy=multi-user.target

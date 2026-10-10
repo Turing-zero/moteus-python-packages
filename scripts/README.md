@@ -1,5 +1,12 @@
 # scripts —— moteus 调试与日志分析工具
 
+## 位置保持守护进程（开机自启）
+
+`moteus_hold/`：开机等待 `can1`，持续保持电机 1/2/3 的位置，`moteus-holdctl` 命令行按步长点动并回显位置、电流等。
+部署与用法见 [moteus_hold/README.md](moteus_hold/README.md)。
+
+---
+
 ## 临时多电机位置测试 GUI
 
 安装本仓库的 `moteus` 包依赖后运行（Linux 桌面还需要 Tkinter）：
