@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>同轴 3-RRR 球面并联机构控制</title>
+  <link rel="stylesheet" href="/static/style.css?v=20261114-duration">
+</head>
+<body>
+  <a class="skip-link" href="#mainContent">跳到主要内容</a>
+  <header class="app-header">
+    <div class="brand-block">
+      <div class="brand-mark" aria-hidden="true">3R</div>
+      <div>
+        <h1>同轴 3-RRR 球面并联机构</h1>
+        <p>三自由度运动控制与状态监视</p>
+      </div>
+    </div>
+    <div class="header-actions">
+      <span id="connectionBadge" class="badge badge-neutral" role="status"><span aria-hidden="true">●</span> 正在连接</span>
+      <button id="stopButton" class="emergency-button" type="button" title="立即停止：POST /api/stop">
+        <span class="stop-icon" aria-hidden="true">■</span>
+        <span><strong>立即停止</strong><small>STOP</small></span>
+      </button>
+    </div>
+  </header>
+
+  <div id="latestAlert" class="latest-alert" role="alert" hidden></div>
+
+  <nav class="tabbar" aria-label="主页面">
+    <button class="tab-button active" id="controlTabButton" type="button" data-tab="control" aria-selected="true" aria-controls="controlPanel">机构控制</button>
+    <button class="tab-button" id="configTabButton" type="button" data-tab="config" aria-selected="false" aria-controls="configPanel">动态参数 <span id="configDirtyDot" class="dirty-dot" hidden aria-label="有未应用修改">●</span></button>
+  </nav>
+
+  <main id="mainContent" class="main-content">
+    <section id="controlPanel" class="tab-panel" aria-labelledby="controlTabButton">
+      <div class="status-grid" aria-label="安全状态">
+        <article class="status-card">
+          <span class="status-label">运行模式</span>
+          <strong id="modeStatus" class="status-value">—</strong>
+          <span id="modeSubstatus" class="status-detail">等待后端状态</span>
+        </article>
+        <article class="status-card">
+          <span class="status-label">控制状态</span>
+          <strong id="controlStatus" class="status-value">—</strong>
+          <span id="enabledStatus" class="status-detail">使能状态未知</span>
+        </article>
+        <article class="status-card">
+          <span class="status-label">标定状态</span>
+          <strong id="calibrationStatus" class="status-value">—</strong>
+          <span class="status-detail">未标定禁止运动指令</span>
+        </article>
+        <article id="faultCard" class="status-card">
+          <span class="status-label">故障状态</span>
+          <strong id="faultStatus" class="status-value">—</strong>
+          <span id="faultDetail" class="status-detail">等待后端状态</span>
+        </article>
+      </div>
+
+      <section id="errorPanel" class="error-panel" aria-labelledby="errorTitle" hidden>
+        <div class="section-heading compact-heading">
+          <h2 id="errorTitle">错误记录</h2>
+          <button id="clearErrorsButton" class="text-button" type="button">清除记录</button>
+        </div>
+        <ul id="errorList" class="error-list"></ul>
+      </section>
+
+      <div class="control-layout">
+        <section class="card visualization-card" aria-labelledby="visualizationTitle">
+          <div class="section-heading visualization-heading">
+            <div>
+              <h2 id="visualizationTitle">机构三维视图</h2>
+              <p>Z 向上 · 正交投影 · 毫米</p>
+            </div>
+            <div class="view-actions" aria-label="视角控制">
+              <button id="topViewButton" class="icon-button" type="button" title="俯视">俯视</button>
+              <button id="resetViewButton" class="icon-button" type="button" title="重置视角">复位</button>
+              <button id="zoomOutButton" class="icon-button" type="button" aria-label="缩小">−</button>
+              <button id="zoomInButton" class="icon-button" type="button" aria-label="放大">＋</button>
+            </div>
+          </div>
+          <div class="visualization-legend" aria-label="图例">
+            <span><i class="legend-line actual-line" aria-hidden="true"></i>实际机构（实线）</span>
+            <span><i class="legend-line target-line" aria-hidden="true"></i>目标机构（虚线半透明）</span>
+            <span class="legend-note">近杆粗 / 远杆细</span>
+          </div>
+          <div id="canvasContainer" class="canvas-container">
+            <canvas id="mechanismCanvas" tabindex="0" role="img" aria-label="三维机构视图。拖拽旋转，滚轮缩放，也可使用右侧视角按钮。">浏览器不支持 Canvas，无法显示机构几何。</canvas>
+            <div id="canvasNotice" class="canvas-notice" role="status">等待有效几何数据</div>
+          </div>
+          <div class="visualization-footer">
+            <span id="actualGeometryStatus">实际几何：未知</span>
+            <span id="targetGeometryStatus">目标几何：未知</span>
+            <span>拖拽旋转 · 滚轮缩放</span>
+          </div>
+        </section>
+
+        <aside class="card command-card" aria-labelledby="commandTitle">
+          <div class="section-heading">
+            <div>
+              <h2 id="commandTitle">运动控制</h2>
+              <p>指令发送前请确认机构周围安全</p>
+            </div>
+          </div>
+
+          <div id="stateMessage" class="state-message">尚未收到后端状态。</div>
+
+          <div class="safety-actions">
+            <button id="calibrateButton" class="button button-primary" type="button">开始标定</button>
+            <button id="holdButton" class="button button-secondary" type="button">保持 Hold</button>
+            <button id="clearButton" class="button button-secondary" type="button">清除故障</button>
+          </div>
+          <button id="extremeCalibrateButton" class="button button-secondary extreme-calibrate-button" type="button">极限位置标零（低速堵转）</button>
+
+          <div class="command-mode-switch" role="group" aria-label="指令模式">
+            <button id="motorModeButton" class="mode-button active" type="button" aria-pressed="true">正解 · 电机角</button>
+            <button id="rpyModeButton" class="mode-button" type="button" aria-pressed="false">逆解 · RPY</button>
+          </div>
+
+          <form id="motorCommandForm" class="command-form">
+            <fieldset>
+              <legend>相对电机角 <span class="unit">deg</span></legend>
+              <p class="form-help">三个电机输出轴的相对目标角；发送前由后端再次校验软限位。</p>
+              <div class="command-input-grid">
+                <label>电机 1<input id="motorCommand0" name="motor0" type="number" step="0.1" value="0" required inputmode="decimal"></label>
+                <label>电机 2<input id="motorCommand1" name="motor1" type="number" step="0.1" value="0" required inputmode="decimal"></label>
+                <label>电机 3<input id="motorCommand2" name="motor2" type="number" step="0.1" value="0" required inputmode="decimal"></label>
+              </div>
+            </fieldset>
+            <label class="command-duration">到达目标时间
+              <span class="duration-input-row"><input id="motorCommandDuration" name="duration" type="number" min="0.05" step="any" value="2" required inputmode="decimal"><span class="duration-unit">秒</span></span>
+              <small>按五次同步曲线到达；过短以致超出速度/加速度上限时，后端会拒绝。</small>
+            </label>
+            <button id="sendMotorCommand" class="button button-command" type="submit">发送正解目标</button>
+          </form>
+
+          <form id="rpyCommandForm" class="command-form" hidden>
+            <fieldset>
+              <legend>平台姿态 <span class="unit">deg</span></legend>
+              <p class="form-help">主动 ZYX 欧拉角：Roll / Pitch / Yaw。范围分别为 ±15° / ±15° / ±60°。</p>
+              <div class="command-input-grid rpy-grid">
+                <label>Roll<input id="rpyCommand0" name="roll" type="number" min="-15" max="15" step="0.1" value="0" required inputmode="decimal"><small>−15…+15°</small></label>
+                <label>Pitch<input id="rpyCommand1" name="pitch" type="number" min="-15" max="15" step="0.1" value="0" required inputmode="decimal"><small>−15…+15°</small></label>
+                <label>Yaw<input id="rpyCommand2" name="yaw" type="number" min="-60" max="60" step="0.1" value="0" required inputmode="decimal"><small>−60…+60°</small></label>
+              </div>
+            </fieldset>
+            <label class="command-duration">到达目标时间
+              <span class="duration-input-row"><input id="rpyCommandDuration" name="duration" type="number" min="0.05" step="any" value="2" required inputmode="decimal"><span class="duration-unit">秒</span></span>
+              <small>按五次同步曲线到达；过短以致超出速度/加速度上限时，后端会拒绝。</small>
+            </label>
+            <button id="sendRpyCommand" class="button button-command" type="submit">发送逆解目标</button>
+          </form>
+
+          <div class="command-safety-note">
+            <strong>软件限位不能替代机械限位与硬件急停。</strong>
+            <span>断线、故障或状态不明时不要继续下发运动。</span>
+          </div>
+        </aside>
+      </div>
+
+      <section class="card pose-card" aria-labelledby="poseTitle">
+        <div class="section-heading">
+          <div>
+            <h2 id="poseTitle">目标 / 实际位姿</h2>
+            <p>无效值显示为“—”，不会以零值代替</p>
+          </div>
+        </div>
+        <div class="table-scroll">
+          <table class="data-table pose-table">
+            <thead><tr><th scope="col">量</th><th scope="col">目标</th><th scope="col">实际</th><th scope="col">单位</th></tr></thead>
+            <tbody id="poseTableBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <div class="lower-grid">
+        <section class="card" aria-labelledby="backendTitle">
+          <div class="section-heading compact-heading"><h2 id="backendTitle">后端循环</h2><span id="lastUpdate" class="muted-text">尚未更新</span></div>
+          <dl class="metrics-list">
+            <div><dt>循环频率</dt><dd id="loopHz">—</dd></div>
+            <div><dt>周期耗时</dt><dd id="cycleMs">—</dd></div>
+            <div><dt>超时计数</dt><dd id="timeoutCount">—</dd></div>
+          </dl>
+        </section>
+        <section class="card" aria-labelledby="conditionTitle">
+          <div class="section-heading compact-heading"><h2 id="conditionTitle">解算质量</h2></div>
+          <dl class="metrics-list">
+            <div><dt>目标条件数 / 残差</dt><dd id="targetQuality">—</dd></div>
+            <div><dt>实际条件数 / 残差</dt><dd id="actualQuality">—</dd></div>
+            <div><dt>条件阈值</dt><dd id="conditionThreshold">—</dd></div>
+          </dl>
+        </section>
+      </div>
+
+      <section class="card motor-card" aria-labelledby="motorTitle">
+        <div class="section-heading">
+          <div><h2 id="motorTitle">电机反馈</h2><p>原始单位为 rev；电机角与输出轴角单位为 deg</p></div>
+          <button id="refreshButton" class="button button-small" type="button">刷新状态</button>
+        </div>
+        <div class="table-scroll motor-table-scroll">
+          <table class="data-table motor-table">
+            <thead>
+              <tr>
+                <th scope="col">ID</th><th scope="col">在线</th><th scope="col">模式</th>
+                <th scope="col">原始位置<br>rev</th><th scope="col">原始目标<br>rev</th>
+                <th scope="col">电机角<br>deg</th><th scope="col">电机目标<br>deg</th>
+                <th scope="col">输出轴角<br>deg</th><th scope="col">轴目标<br>deg</th>
+                <th scope="col">速度<br>rev/s</th><th scope="col">扭矩<br>N·m</th>
+                <th scope="col">电压<br>V</th><th scope="col">温度<br>°C</th>
+                <th scope="col">反馈龄期<br>ms</th><th scope="col">轨迹完成</th><th scope="col">故障</th>
+              </tr>
+            </thead>
+            <tbody id="motorFeedbackBody"><tr><td colspan="16" class="empty-cell">等待电机反馈</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+
+    <section id="configPanel" class="tab-panel" aria-labelledby="configTabButton" hidden>
+      <div class="config-intro">
+        <div>
+          <h2>动态参数</h2>
+          <p>“应用”仅在当前进程生效；“保存”同时写入后端配置。修改机构尺寸前请核对机械干涉与软限位。</p>
+        </div>
+        <span id="configStatus" class="badge badge-neutral">等待配置</span>
+      </div>
+      <form id="configForm" novalidate>
+        <div id="configSections" class="config-sections"></div>
+        <div id="configFormError" class="form-error" role="alert" hidden></div>
+        <div class="config-action-bar">
+          <div class="config-action-copy">
+            <strong>完整配置提交</strong>
+            <span>留空的可选参数将按 null 提交；所有更改由后端最终校验。</span>
+          </div>
+          <div class="config-buttons">
+            <button id="resetConfigButton" class="button button-danger-ghost" type="button">恢复默认</button>
+            <button id="applyConfigButton" class="button button-secondary" type="button">应用，不保存</button>
+            <button id="saveConfigButton" class="button button-primary" type="submit">应用并保存</button>
+          </div>
+        </div>
+      </form>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <noscript><div class="noscript-warning">此控制页需要 JavaScript。请启用后重新加载；硬件急停不依赖本页面。</div></noscript>
+  <script src="/static/app.js?v=20261115-source-params" defer></script>
+</body>
+</html>

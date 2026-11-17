@@ -1,0 +1,9 @@
+__pycache__/
+*.py[cod]
+config.json
+.coverage
+.graphflow-cache/
+graphflow-out/
+tests/*.png
+tests/current_mode_probe.json
+tests/full_calibration_*.json

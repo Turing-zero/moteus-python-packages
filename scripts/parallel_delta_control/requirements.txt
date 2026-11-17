@@ -1,0 +1,6 @@
+numpy>=1.24
+fastapi>=0.110
+uvicorn[standard]>=0.29
+# Standalone deployment also needs the moteus package and its CAN dependencies.
+moteus
+python-can>=3.3
