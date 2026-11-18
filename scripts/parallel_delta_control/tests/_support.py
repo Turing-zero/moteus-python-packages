@@ -31,8 +31,32 @@ class FakeBackend:
         self.is_open = False
 
 
+def controlled_config():
+    """Deterministic low-speed test setup, independent of production defaults."""
+    config = AppConfig()
+    config.transmission.directions = (1, 1, 1)
+    config.transmission.belt_reduction = 2.0
+    config.safety.feedback_rpy_margin_deg = 1.0
+    config.safety.motor_min_deg = (-1300.0, -1300.0, -1300.0)
+    config.safety.motor_max_deg = (1300.0, 1300.0, 1300.0)
+    config.safety.max_move_deg = 2600.0
+    config.safety.velocity_limit_rev_s = 0.5
+    config.safety.accel_limit_rev_s2 = 2.0
+    config.safety.maximum_torque_nm = None
+    config.safety.kp_scale = None
+    config.safety.kd_scale = None
+    config.safety.state_publish_hz = 20.0
+    config.safety.fk_tolerance = 1e-10
+    config.safety.fk_max_iterations = 30
+    config.safety.max_pose_step_deg = 30.0
+    config.safety.max_feedback_step_deg = 30.0
+    config.calibration.velocity_rev_s = 0.5
+    config.calibration.accel_rev_s2 = 0.5
+    return config
+
+
 def fake_controller(config=None):
-    config = config or AppConfig()
+    config = config or controlled_config()
     if config.calibration.firmware_max_current_a is None:
         config.calibration.firmware_max_current_a = 10.0
     if config.calibration.motor_kv is None:

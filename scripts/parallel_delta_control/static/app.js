@@ -15,29 +15,29 @@
       rod_diameter: 8, motor_radius: 14
     },
     transmission: {
-      motor_ids: [1, 2, 3], directions: [1, 1, 1],
-      motor_reduction: 8, belt_reduction: 2
+      motor_ids: [1, 2, 3], directions: [-1, 1, 1],
+      motor_reduction: 8, belt_reduction: 2.22
     },
     safety: {
       roll_limit_deg: 15, pitch_limit_deg: 15, yaw_limit_deg: 60,
-      feedback_rpy_margin_deg: 1,
-      motor_min_deg: [-1300, -1300, -1300],
-      motor_max_deg: [1300, 1300, 1300], max_move_deg: 2600,
-      velocity_limit_rev_s: 0.5, accel_limit_rev_s2: 2,
-      maximum_torque_nm: null, kp_scale: null, kd_scale: null,
+      feedback_rpy_margin_deg: 10,
+      motor_min_deg: [-1066, -1066, -1066],
+      motor_max_deg: [1066, 1066, 1066], max_move_deg: 5000,
+      velocity_limit_rev_s: 100, accel_limit_rev_s2: 100,
+      maximum_torque_nm: 1, kp_scale: 1, kd_scale: 1,
       watchdog_timeout_s: 0.25, feedback_timeout_s: 0.5,
       cycle_timeout_s: 0.05, control_rate_hz: 100,
-      state_publish_hz: 20, min_condition: 0.05,
-      fk_tolerance: 1e-10, fk_max_iterations: 30,
-      fk_path_step_deg: 2, max_pose_step_deg: 30, max_feedback_step_deg: 30,
+      state_publish_hz: 100, min_condition: 0.05,
+      fk_tolerance: 1e-9, fk_max_iterations: 300,
+      fk_path_step_deg: 2, max_pose_step_deg: 300, max_feedback_step_deg: 1000,
       command_complete_tol_deg: 1
     },
     calibration: {
-      velocity_rev_s: 0.5, accel_rev_s2: 0.5, drive_current_a: 0.5,
-      motor_kv: null,
-      firmware_max_current_a: null, max_q_current_a: 2,
-      stall_velocity_rev_s: 0.02, stall_position_tol_deg: 1,
-      stable_s: 1, stage_timeout_s: 20, min_span_rev: 0.1,
+      velocity_rev_s: 1.5, accel_rev_s2: 3, drive_current_a: 0.5,
+      motor_kv: 127.2,
+      firmware_max_current_a: 2, max_q_current_a: 6,
+      stall_velocity_rev_s: 0.04, stall_position_tol_deg: 2,
+      stable_s: 1, settle_s: 0.5, stage_timeout_s: 30, min_span_rev: 0.1,
       max_span_imbalance: 0.1, return_tol_deg: 2
     }
   };
@@ -116,6 +116,7 @@
         { name: "stall_velocity_rev_s", label: "堵转速度阈值", unit: "rev/s", min: 0.000001 },
         { name: "stall_position_tol_deg", label: "稳定位置漂移阈值", unit: "deg", min: 0.000001 },
         { name: "stable_s", label: "稳定采样时长", unit: "s", min: 0.000001 },
+        { name: "settle_s", label: "STOPPED 复位时长", unit: "s", min: 0.000001 },
         { name: "stage_timeout_s", label: "单阶段超时", unit: "s", min: 0.000001 },
         { name: "min_span_rev", label: "最小有效行程", unit: "rev", min: 0.000001 },
         { name: "max_span_imbalance", label: "三轴行程最大相对差异", min: 0.000001, max: 1 },

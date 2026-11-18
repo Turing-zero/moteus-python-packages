@@ -58,6 +58,7 @@ class MotorState:
 class ExtremeCalibrationProcess:
     stage: str
     deadline: float
+    stage_started: float = 0.0
     stable_since: dict[int, float | None] = field(default_factory=dict)
     reference_rev: dict[int, float] = field(default_factory=dict)
     stable_sum_rev: dict[int, float] = field(default_factory=dict)
@@ -200,7 +201,8 @@ class MechanismController:
                         self._sim_auto_calibrated = False
                     self._invalidate_calibration("后端已重新连接，必须重新直立标定")
                 process = self._extreme_calibration
-                command_stop = not self.enabled and process is None
+                command_stop = ((not self.enabled and process is None) or
+                                (process is not None and process.stage == "settle"))
                 velocity_only = (process is not None and
                                  process.stage in ("positive", "negative"))
                 if velocity_only:
@@ -344,6 +346,7 @@ class MechanismController:
         process = self._extreme_calibration
         assert process is not None
         process.stage = stage
+        process.stage_started = now
         process.deadline = now + self.config.calibration.stage_timeout_s
         process.stable_since = {motor_id: None for motor_id in self.ids}
         process.reference_rev = {
@@ -392,6 +395,11 @@ class MechanismController:
                 self._fail_extreme_calibration(
                     f"电机 {motor_id} Q 轴电流 {current:+.3f} A 超过标定限值")
                 return
+        if process.stage == "settle":
+            if now - process.stage_started >= calibration.settle_s:
+                self._reset_extreme_stage("negative", now)
+                self.message = "极限标定：中立保持完成，三轴开始反转"
+            return
         if process.stage == "return":
             if self._trajectory is not None:
                 return
@@ -448,8 +456,8 @@ class MechanismController:
         if process.stage == "positive":
             process.positive_rev = extreme
             log.info("正转极限平均位置 rev=%s", extreme.tolist())
-            self._reset_extreme_stage("negative", now)
-            self.message = "极限标定：正转极限已记录，三轴限速限流反转"
+            self._reset_extreme_stage("settle", now)
+            self.message = "极限标定：正转极限已记录，短暂 STOPPED 复位后反转"
             return
         assert process.positive_rev is not None
         self._accept_extreme_midpoint(process.positive_rev, extreme, now)

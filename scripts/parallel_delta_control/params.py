@@ -115,9 +115,9 @@ class TransmissionParams:
     """Mapping between moteus motor-shaft revolutions and coaxial shaft angles."""
 
     motor_ids: tuple[int, int, int] = (1, 2, 3)
-    directions: tuple[int, int, int] = (1, 1, 1)
+    directions: tuple[int, int, int] = (-1, 1, 1)
     motor_reduction: float = 8.0
-    belt_reduction: float = 2.0
+    belt_reduction: float = 2.22
 
     @property
     def total_reduction(self) -> float:
@@ -154,26 +154,26 @@ class SafetyParams:
     pitch_limit_deg: float = 15.0
     yaw_limit_deg: float = 60.0
     # Feedback may slightly overshoot a command boundary; targets remain strict.
-    feedback_rpy_margin_deg: float = 1.0
-    motor_min_deg: tuple[float, float, float] = (-1300.0, -1300.0, -1300.0)
-    motor_max_deg: tuple[float, float, float] = (1300.0, 1300.0, 1300.0)
-    max_move_deg: float = 2600.0
-    velocity_limit_rev_s: float = 0.5
-    accel_limit_rev_s2: float = 2.0
-    maximum_torque_nm: float | None = None
-    kp_scale: float | None = None
-    kd_scale: float | None = None
+    feedback_rpy_margin_deg: float = 10.0
+    motor_min_deg: tuple[float, float, float] = (-1066.0, -1066.0, -1066.0)
+    motor_max_deg: tuple[float, float, float] = (1066.0, 1066.0, 1066.0)
+    max_move_deg: float = 5000.0
+    velocity_limit_rev_s: float = 100.0
+    accel_limit_rev_s2: float = 100.0
+    maximum_torque_nm: float | None = 1.0
+    kp_scale: float | None = 1.0
+    kd_scale: float | None = 1.0
     watchdog_timeout_s: float = 0.25
     feedback_timeout_s: float = 0.5
     cycle_timeout_s: float = 0.05
     control_rate_hz: float = 100.0
-    state_publish_hz: float = 20.0
+    state_publish_hz: float = 100.0
     min_condition: float = 0.05
-    fk_tolerance: float = 1e-10
-    fk_max_iterations: int = 30
+    fk_tolerance: float = 1e-9
+    fk_max_iterations: int = 300
     fk_path_step_deg: float = 2.0
-    max_pose_step_deg: float = 30.0
-    max_feedback_step_deg: float = 30.0
+    max_pose_step_deg: float = 300.0
+    max_feedback_step_deg: float = 1000.0
     command_complete_tol_deg: float = 1.0
 
     def validate(self) -> None:
@@ -216,16 +216,17 @@ class SafetyParams:
 class CalibrationParams:
     """Absolute working current plus an independent, higher protection limit."""
 
-    velocity_rev_s: float = 0.5
-    accel_rev_s2: float = 0.5
+    velocity_rev_s: float = 1.5
+    accel_rev_s2: float = 3.0
     drive_current_a: float = 0.5
-    motor_kv: float | None = None
-    firmware_max_current_a: float | None = None
-    max_q_current_a: float = 2.0
-    stall_velocity_rev_s: float = 0.02
-    stall_position_tol_deg: float = 1.0
+    motor_kv: float | None = 127.2
+    firmware_max_current_a: float | None = 2.0
+    max_q_current_a: float = 6.0
+    stall_velocity_rev_s: float = 0.04
+    stall_position_tol_deg: float = 2.0
     stable_s: float = 1.0
-    stage_timeout_s: float = 20.0
+    settle_s: float = 0.5
+    stage_timeout_s: float = 30.0
     min_span_rev: float = 0.1
     max_span_imbalance: float = 0.1
     return_tol_deg: float = 2.0
@@ -247,7 +248,7 @@ class CalibrationParams:
     def validate(self) -> None:
         for name in ("velocity_rev_s", "accel_rev_s2", "drive_current_a",
                      "max_q_current_a", "stall_velocity_rev_s",
-                     "stall_position_tol_deg", "stable_s", "stage_timeout_s",
+                     "stall_position_tol_deg", "stable_s", "settle_s", "stage_timeout_s",
                      "min_span_rev", "return_tol_deg"):
             _finite(f"calibration.{name}", getattr(self, name), positive=True)
         if self.motor_kv is not None:

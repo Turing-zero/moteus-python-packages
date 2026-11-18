@@ -7,12 +7,12 @@ from kinematics import (KinematicsError, forward_kinematics, home_result,
                         inverse_from_rpy, motor_deg_to_q, motor_deg_to_raw_rev,
                         q_to_motor_deg, raw_rev_to_motor_deg, verify_inverse)
 from mechanism import Q_HOME, Q_HOME_DEG
-from params import AppConfig
+from _support import controlled_config
 
 
 class KinematicsTests(unittest.TestCase):
     def setUp(self):
-        self.config = AppConfig()
+        self.config = controlled_config()
 
     def test_home(self):
         result = home_result(self.config)
@@ -49,7 +49,7 @@ class KinematicsTests(unittest.TestCase):
         np.testing.assert_allclose(geometry["roots"][:, 2], [8.0, 15.0, 22.0])
 
     def test_motor_and_transmission_mapping(self):
-        config = AppConfig()
+        config = controlled_config()
         np.testing.assert_allclose(motor_deg_to_q([160, -160, 320], config.transmission),
                                    Q_HOME + np.radians([10, -10, 20]))
         config.transmission = dataclasses.replace(

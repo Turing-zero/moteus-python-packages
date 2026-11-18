@@ -7,3 +7,5 @@ graphflow-out/
 tests/*.png
 tests/current_mode_probe.json
 tests/full_calibration_*.json
+tests/reversal_delay_probe.json
+tests/reversal_probe.py

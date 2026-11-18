@@ -12,7 +12,9 @@ class ConfigTests(unittest.TestCase):
     def test_defaults(self):
         config = AppConfig()
         config.validate()
-        self.assertEqual(config.transmission.total_reduction, 16.0)
+        self.assertEqual(config.transmission.total_reduction, 17.76)
+        self.assertEqual(config.transmission.directions, (-1, 1, 1))
+        self.assertEqual(config.transmission.belt_reduction, 2.22)
         self.assertEqual(config.mechanism.H, 85.0)
         self.assertEqual(config.mechanism.D, 80.0)
         self.assertEqual(config.mechanism.alpha1_deg, 45.0)
@@ -20,8 +22,10 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.mechanism.beta_deg, 45.0)
         self.assertEqual(config.mechanism.motor_heights, (8.0, 15.0, 22.0))
         self.assertEqual(config.calibration.drive_current_a, 0.5)
-        self.assertEqual(config.calibration.max_q_current_a, 2.0)
-        self.assertIsNone(config.calibration.current_limit_scale)
+        self.assertEqual(config.calibration.max_q_current_a, 6.0)
+        self.assertEqual(config.calibration.motor_kv, 127.2)
+        self.assertEqual(config.calibration.firmware_max_current_a, 2.0)
+        self.assertEqual(config.calibration.current_limit_scale, 0.25)
 
     def test_round_trip_and_atomic_replace(self):
         with tempfile.TemporaryDirectory() as directory:

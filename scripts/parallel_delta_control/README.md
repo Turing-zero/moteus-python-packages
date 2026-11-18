@@ -20,7 +20,7 @@
 - **实物层叠顺序**：底层 M1、中层 M2、顶层 M3；几何显示中的电机高度按此排列。
 - **直立零位**：`R=I`、RPY=(0,0,0)，三个网页电机相对角均为 0°。
 - 电机角正方向通过 `directions` 配置；每个方向同时作用于反馈和命令。
-- 默认总减速比：`motor_reduction × belt_reduction = 8 × 2 = 16`。
+- 默认总减速比：`motor_reduction × belt_reduction = 8 × 2.22 = 17.76`。
 
 转换关系（`z_i` 为标定时原始 rev，`s_i` 为方向）：
 
@@ -47,6 +47,8 @@ raw_target_i = z_i + s_i × motor_target_deg_i / 360
 | column_radius | 14 mm | 中心柱外观半径 |
 | gear_radius / pinion_radius | 28 / 8 mm | 外观和底座包络参数 |
 | rod_diameter / motor_radius | 8 / 14 mm | 杆件/电机外观参数 |
+
+当前前端默认传动与安全参数：ID `[1,2,3]`、方向 `[-1,1,1]`、总减速比 `17.76`；速度/加速度上限均为 `100`，状态发布 `100 Hz`，反馈姿态裕量 `10°`，电机软限位 `±1066°`，`max_move=5000°`，`kp_scale=kd_scale=1`，`maximum_torque=1 N·m`，FK 容差 `1e-9`、最大迭代 `300`，姿态分支阈值 `300°`，反馈跳变阈值 `1000°`。这些值来自当前实物配置，不能替代机械限位和独立急停。
 
 几何修改只改变模型；它不会自动证明实物无干涉或可达。
 
@@ -140,14 +142,15 @@ python3 main.py --hardware --channel can1 --ids 1,2,3
 
 1. 三轴同时以标定速度、加速度和扭矩/电流限制正转，寻找正转机械极限；
 2. 每轴必须同时满足反馈新鲜、速度低于阈值、位置无漂移，并有预期方向的堵转电流；三轴持续稳定 `1 s` 后，记录窗口内平均位置；
-3. 三轴反转，以相同方法记录反转极限；
-4. 计算三轴正负行程，要求行程大于最小值且 `(max-min)/mean` 不超过 `max_span_imbalance`（默认 10%），否则判定可能卡滞并失败；
-5. 以正负极限的平均 raw rev 为零位，使用低速五次轨迹归零，反馈进入容差后保持；
-6. 任一阶段超时、Q 轴过流、控制器故障、反馈丢失或正解失败都会整组失能并作废零位；Stop 随时取消流程，不会自动重试。
+3. 在正反转之间执行 `settle_s`（默认 0.5 s）的 `make_stop()` 短暂复位，清除 moteus 内部控制位置与 PID 积分，再开始反转；
+4. 三轴反转，以相同方法记录反转极限；
+5. 计算三轴正负行程，要求行程大于最小值且 `(max-min)/mean` 不超过 `max_span_imbalance`（默认 10%），否则判定可能卡滞并失败；
+6. 以正负极限的平均 raw rev 为零位，使用低速五次轨迹归零，反馈进入容差后保持；
+7. 任一阶段超时、Q 轴过流、控制器故障、反馈丢失或正解失败都会整组失能并作废零位；Stop 随时取消流程，不会自动重试。
 
-默认标定速度 `0.5 rev/s`、工作电流 `drive_current_a=0.5 A`、独立保护阈值 `max_q_current_a=2 A`。堵转搜索使用 `position=NaN` 的纯速度位置命令，速度和加速度由 moteus 固件轨迹器控制，包含换向减速，不使用上位机直接电流调速。
+默认标定速度 `1.5 rev/s`、加速度 `3 rev/s²`、工作电流 `drive_current_a=0.5 A`、独立保护阈值 `max_q_current_a=6 A`、堵转速度阈值 `0.04 rev/s`、位置漂移阈值 `2°`、单阶段超时 `30 s`。堵转搜索使用 `position=NaN` 的纯速度位置命令，速度和加速度由 moteus 固件轨迹器控制，包含换向减速，不使用上位机直接电流调速。
 
-固件源码表明 `ilimit_scale` 只缩放 PID 积分项的 `ilimit`，并不限制 P/D 或最终 Q 轴总电流；`fixed_current_override` 是固定电流/合成电角度路径，也不是普通速度模式的限流。因此最终输出通过 `maximum_torque` 限制，并按实际电机 Kv 换算：`Kt=(3/2)*(1/√3)*(60/(2π))/Kv`，在现有 `rotor_to_output_ratio=1` 约定下 `maximum_torque=drive_current_a*Kt`。`motor_kv` 和真实固件 `servo.max_current_A` 都必须填写，未知时禁止启动。
+固件源码表明 `ilimit_scale` 只缩放 PID 积分项的 `ilimit`，并不限制 P/D 或最终 Q 轴总电流；`fixed_current_override` 是固定电流/合成电角度路径，也不是普通速度模式的限流。因此最终输出通过 `maximum_torque` 限制，并按实际电机 Kv 换算：`Kt=(3/2)*(1/√3)*(60/(2π))/Kv`，在现有 `rotor_to_output_ratio=1` 约定下 `maximum_torque=drive_current_a*Kt`。`motor_kv` 和真实固件 `servo.max_current_A` 都必须填写，当前默认分别为 `127.2` 和 `2 A`，更换电机或固件配置时必须同步修改。
 
 故障 102（指令最大扭矩限幅）全局仅记录警告，不锁存或中断流程；故障 99（固件电流限值）、其他故障、Mode.FAULT/TIMEOUT、过流和超时仍立即中止。保护阈值必须大于工作电流。回零阶段使用位置轨迹和 `ilimit_scale=drive_current_a/firmware_max_current_a`。使用前必须确认 Kv、固件限值、机械堵转强度和热承受能力。该功能不能替代独立硬件急停，也不保证堵转不会损坏机构。
 

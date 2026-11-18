@@ -16,11 +16,10 @@ sys.path.insert(0, str(REPO_MOTEUS))
 
 from moteus.protocol import Mode, Register
 
-from _support import fake_controller, feed
+from _support import controlled_config, fake_controller, feed
 from controller import ControlError, MechanismController
 from kinematics import (inverse_from_rpy, motor_deg_to_raw_rev, KinematicsError,
                         forward_kinematics)
-from params import AppConfig
 from trajectory import WaypointTrajectory
 
 
@@ -227,6 +226,10 @@ class ControllerTests(unittest.TestCase):
             extreme_sample(controller, positive, "positive")
             clock[0] += 1.2
             extreme_sample(controller, positive, "positive")
+            self.assertEqual(controller._extreme_calibration.stage, "settle")
+            clock[0] += controller.config.calibration.settle_s + 0.01
+            extreme_sample(controller, positive, "positive")
+            controller._service_extreme_calibration(clock[0])
             self.assertEqual(controller._extreme_calibration.stage, "negative")
             clock[0] += 0.1
             extreme_sample(controller, negative, "negative")
@@ -263,6 +266,10 @@ class ControllerTests(unittest.TestCase):
                 extreme_sample(controller, positions, stage)
                 clock[0] += 1.2
                 extreme_sample(controller, positions, stage)
+                if stage == "positive":
+                    clock[0] += controller.config.calibration.settle_s
+                    extreme_sample(controller, positions, stage)
+                    controller._service_extreme_calibration(clock[0])
             self.assertFalse(controller.calibrated)
             self.assertFalse(controller.enabled)
             self.assertIsNone(controller._extreme_calibration)
@@ -301,7 +308,7 @@ class ControllerTests(unittest.TestCase):
         clock = [time.monotonic()]
         with mock.patch("controller.time.monotonic", side_effect=lambda: clock[0]):
             controller.start_extreme_calibration()
-            extreme_sample(controller, [10.25, -3.5, 0.75], "positive", current=4.0)
+            extreme_sample(controller, [10.25, -3.5, 0.75], "positive", current=7.0)
             self.assertIn("电流", controller.fault)
             self.assertIsNone(controller._extreme_calibration)
 
@@ -309,7 +316,7 @@ class ControllerTests(unittest.TestCase):
         clock = [time.monotonic()]
         with mock.patch("controller.time.monotonic", side_effect=lambda: clock[0]):
             controller.start_extreme_calibration()
-            clock[0] += 21.0
+            clock[0] += 31.0
             extreme_sample(controller, [10.25, -3.5, 0.75], "positive")
             self.assertIn("超时", controller.fault)
 
@@ -381,7 +388,7 @@ class ControllerAsyncTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_velocity_only_calibration_command(self):
         from backends import SimulatedBackend
-        config = AppConfig()
+        config = controlled_config()
         backend = SimulatedBackend(config.transmission.motor_ids)
         await backend.open()
         try:
@@ -396,7 +403,7 @@ class ControllerAsyncTests(unittest.IsolatedAsyncioTestCase):
     async def test_config_update_requires_stop_and_recalibration(self):
         controller = fake_controller()
         controller.calibrate()
-        changed = AppConfig()
+        changed = controlled_config()
         changed.transmission = dataclasses.replace(changed.transmission, motor_reduction=4.0)
         with self.assertRaises(ControlError):
             await controller.update_config(changed)
@@ -409,7 +416,7 @@ class ControllerAsyncTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_moteus_simulator_end_to_end(self):
         from backends import SimulatedBackend
-        config = AppConfig()
+        config = controlled_config()
         backend = SimulatedBackend(config.transmission.motor_ids)
         controller = MechanismController(config, backend, auto_calibrate_simulation=False)
         await backend.open()
@@ -435,7 +442,7 @@ class ControllerAsyncTests(unittest.IsolatedAsyncioTestCase):
             await controller.shutdown()
     async def test_boundary_transition_full_feedback(self):
         from backends import SimulatedBackend
-        config = AppConfig()
+        config = controlled_config()
         backend = SimulatedBackend(config.transmission.motor_ids)
         controller = MechanismController(config, backend, auto_calibrate_simulation=True)
         await controller.start()
@@ -467,7 +474,7 @@ class ControllerAsyncTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_simulator_reconnect_autocalibrates(self):
         from backends import SimulatedBackend
-        config = AppConfig()
+        config = controlled_config()
         backend = SimulatedBackend(config.transmission.motor_ids)
         controller = MechanismController(config, backend, auto_calibrate_simulation=True)
         await controller.start()
