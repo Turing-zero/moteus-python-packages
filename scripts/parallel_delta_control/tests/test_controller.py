@@ -119,6 +119,22 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual(diagnostic["threshold_deg"], 30.0)
         self.assertGreaterEqual(diagnostic["elapsed_ms"], 120.0)
 
+    def test_fault_102_is_global_warning(self):
+        controller = fake_controller()
+        controller.calibrate()
+        results = {}
+        for motor_id in controller.ids:
+            results[motor_id] = {
+                Register.POSITION: controller.motors[motor_id].raw_position_rev,
+                Register.MODE: int(Mode.POSITION), Register.FAULT: 102,
+            }
+        with self.assertLogs("parallel_delta_control", level="WARNING") as logs:
+            controller._apply_results(results, time.monotonic())
+            controller._apply_results(results, time.monotonic())
+        self.assertIsNone(controller.fault)
+        self.assertTrue(controller.enabled)
+        self.assertEqual(len(logs.output), 3)  # One warning per motor, no 100 Hz spam.
+
     def test_feedback_fault_stops_group(self):
         controller = fake_controller()
         controller.calibrate()
@@ -250,6 +266,12 @@ class ControllerTests(unittest.TestCase):
             self.assertFalse(controller.calibrated)
             self.assertFalse(controller.enabled)
             self.assertIsNone(controller._extreme_calibration)
+            self.assertIn("不一致", controller.fault)
+            # A later POSITION+102 must not overwrite the real calibration error.
+            feed(controller, negative, mode=Mode.POSITION, fault=102)
+            controller._apply_results(
+                {motor_id: motor.values for motor_id, motor in controller.motors.items()},
+                time.monotonic())
             self.assertIn("不一致", controller.fault)
 
     def test_firmware_velocity_commands_and_expected_limit_102(self):

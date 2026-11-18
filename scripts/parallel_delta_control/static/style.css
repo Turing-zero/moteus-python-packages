@@ -227,6 +227,7 @@ h1 { margin-bottom: 2px; font-size: clamp(17px, 2vw, 23px); line-height: 1.25; l
 .motor-table th { padding: 8px 10px; }
 .motor-table td { padding: 8px 10px; }
 .motor-table .motor-fault { max-width: 240px; color: #ff9d9d; overflow: hidden; text-overflow: ellipsis; }
+.motor-table .has-warning .motor-fault { color: #ffd166; }
 .online-dot { display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 50%; background: var(--muted); }
 .online-dot.online { background: var(--good); }
 .empty-cell { padding: 24px !important; color: var(--muted); text-align: center !important; }

@@ -149,7 +149,7 @@ python3 main.py --hardware --channel can1 --ids 1,2,3
 
 固件源码表明 `ilimit_scale` 只缩放 PID 积分项的 `ilimit`，并不限制 P/D 或最终 Q 轴总电流；`fixed_current_override` 是固定电流/合成电角度路径，也不是普通速度模式的限流。因此最终输出通过 `maximum_torque` 限制，并按实际电机 Kv 换算：`Kt=(3/2)*(1/√3)*(60/(2π))/Kv`，在现有 `rotor_to_output_ratio=1` 约定下 `maximum_torque=drive_current_a*Kt`。`motor_kv` 和真实固件 `servo.max_current_A` 都必须填写，未知时禁止启动。
 
-仅当标定进行中且控制器仍为 POSITION 时，故障 102（指令最大扭矩限幅）被视为达到预期限幅；故障 99（固件电流限值）、其他故障、过流和超时仍立即中止。保护阈值必须大于工作电流。回零阶段使用位置轨迹和 `ilimit_scale=drive_current_a/firmware_max_current_a`。使用前必须确认 Kv、固件限值、机械堵转强度和热承受能力。该功能不能替代独立硬件急停，也不保证堵转不会损坏机构。
+故障 102（指令最大扭矩限幅）全局仅记录警告，不锁存或中断流程；故障 99（固件电流限值）、其他故障、Mode.FAULT/TIMEOUT、过流和超时仍立即中止。保护阈值必须大于工作电流。回零阶段使用位置轨迹和 `ilimit_scale=drive_current_a/firmware_max_current_a`。使用前必须确认 Kv、固件限值、机械堵转强度和热承受能力。该功能不能替代独立硬件急停，也不保证堵转不会损坏机构。
 
 ## 6. 动态配置与保存
 

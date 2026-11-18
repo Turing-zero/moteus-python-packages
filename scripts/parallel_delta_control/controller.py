@@ -23,6 +23,7 @@ from trajectory import SynchronizedTrajectory, WaypointTrajectory
 
 
 log = logging.getLogger("parallel_delta_control")
+_NON_FATAL_CONTROLLER_FAULTS = {102}  # commanded max-torque limiting, not a trip
 
 
 class ControlError(RuntimeError):
@@ -37,6 +38,7 @@ class MotorState:
     last_update: float = 0.0
     raw_target_rev: float | None = None
     ever_online: bool = False
+    reported_fault: int = 0
 
     @property
     def raw_position_rev(self) -> float:
@@ -260,9 +262,10 @@ class MechanismController:
             motor.ever_online = True
             mode = motor.controller_mode
             fault = motor.controller_fault
-            expected_torque_limit = (self._extreme_calibration is not None and
-                                     mode == Mode.POSITION and fault == 102)
-            if (fault and not expected_torque_limit) or \
+            if fault == 102 and motor.reported_fault != 102:
+                log.warning("电机 %d 处于最大扭矩限幅（fault=102，非致命）", motor_id)
+            motor.reported_fault = fault
+            if (fault and fault not in _NON_FATAL_CONTROLLER_FAULTS) or \
                     ((self.enabled or self._extreme_calibration is not None)
                      and mode in (Mode.FAULT, Mode.TIMEOUT)):
                 self._trip(f"电机 {motor_id} 控制器故障/超时："
@@ -510,7 +513,9 @@ class MechanismController:
         if not self._all_fresh():
             self._trip("清故障后反馈不完整")
             return
-        if any(motor.controller_fault for motor in self.motors.values()):
+        if any((motor.controller_fault and
+                motor.controller_fault not in _NON_FATAL_CONTROLLER_FAULTS) or
+               motor.controller_mode == Mode.FAULT for motor in self.motors.values()):
             self.fault = "控制器仍存在 FAULT，请检查硬件"
             return
         self.fault = None
@@ -549,7 +554,9 @@ class MechanismController:
         if self.fault:
             raise ControlError(f"故障锁存：{self.fault}")
         for motor in self.motors.values():
-            if motor.controller_fault or motor.controller_mode == Mode.FAULT:
+            if (motor.controller_fault and
+                    motor.controller_fault not in _NON_FATAL_CONTROLLER_FAULTS) or \
+                    motor.controller_mode == Mode.FAULT:
                 raise ControlError(f"电机 {motor.id} 处于 FAULT，请先检查和清除")
 
     def calibrate(self) -> None:

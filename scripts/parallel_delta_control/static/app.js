@@ -487,7 +487,8 @@
       numericFields.forEach(([key, digits]) => row.append(makeCell(formatNumber(item[key], digits))));
       row.append(makeCell(item.trajectory_complete === true ? "✓ 是" : item.trajectory_complete === false ? "✗ 否" : DASH));
       const fault = makeCell(formatValue(item.fault), "motor-fault");
-      if (item.fault) row.classList.add("has-fault");
+      if (item.fault === 102) row.classList.add("has-warning");
+      else if (item.fault) row.classList.add("has-fault");
       row.append(fault);
       body.append(row);
     });
