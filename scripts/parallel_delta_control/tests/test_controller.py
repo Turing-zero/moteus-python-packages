@@ -19,7 +19,7 @@ from moteus.protocol import Mode, Register
 from _support import controlled_config, fake_controller, feed
 from controller import ControlError, MechanismController
 from kinematics import (inverse_from_rpy, motor_deg_to_raw_rev, KinematicsError,
-                        forward_kinematics)
+                        forward_kinematics, rpy_rate_to_raw_velocity)
 from trajectory import WaypointTrajectory
 
 
@@ -209,6 +209,43 @@ class ControllerTests(unittest.TestCase):
         self.assertIsInstance(controller._trajectory, WaypointTrajectory)
         np.testing.assert_allclose(result.rpy_deg, [-3, -3, -45], atol=1e-8)
         self.assertGreaterEqual(calls["count"], 3)
+
+    def test_velocity_limits_stop_without_fault_and_allow_reverse(self):
+        controller = fake_controller()
+        controller.calibrate()
+        controller.set_rpy_velocity([10, 0, 0])
+        controller.actual_result.rpy_deg = np.array([15.0, 0.0, 0.0])
+        velocities = controller._current_velocities()
+        np.testing.assert_allclose(list(velocities.values()), np.zeros(3))
+        self.assertTrue(controller._velocity_command.blocked)
+        self.assertIsNone(controller.fault)
+        controller.set_rpy_velocity([10, 5, 10])
+        partial = controller._current_velocities()
+        expected = rpy_rate_to_raw_velocity(
+            controller.config, controller.actual_result, [0, 5, 10])
+        expected = expected * min(
+            1.0, controller.config.safety.velocity_motor_max_rev_s /
+            np.max(np.abs(expected)))
+        np.testing.assert_allclose(list(partial.values()), expected, atol=1e-9)
+        self.assertTrue(controller._velocity_command.blocked)
+        self.assertTrue(controller._velocity_command.moving)
+        self.assertIsNone(controller.fault)
+        controller.set_rpy_velocity([-10, 0, 0])
+        velocities = controller._current_velocities()
+        self.assertFalse(controller._velocity_command.blocked)
+        self.assertGreater(np.max(np.abs(list(velocities.values()))), 0.0)
+
+        controller.set_motor_velocity([0.2, 0.0, 0.0])
+        controller._previous_actual_motor = np.array([1300.0, 0.0, 0.0])
+        velocities = controller._current_velocities()
+        np.testing.assert_allclose(list(velocities.values()), np.zeros(3))
+        self.assertTrue(controller._velocity_command.blocked)
+        controller.set_motor_velocity([-0.2, 0.0, 0.0])
+        velocities = controller._current_velocities()
+        self.assertLess(velocities[controller.ids[0]], 0.0)
+        self.assertFalse(controller._velocity_command.blocked)
+        controller.stop()
+        self.assertIsNone(controller._velocity_command)
 
     def test_extreme_calibration_success_and_return(self):
         controller = fake_controller()

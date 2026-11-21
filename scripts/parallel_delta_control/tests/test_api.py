@@ -99,6 +99,9 @@ class ApiTests(unittest.TestCase):
         for element_id in ("motorCommandDuration", "rpyCommandDuration"):
             self.assertRegex(
                 page.text, rf'id="{element_id}"[^>]*min="0\.05"[^>]*step="any"')
+        for element_id in ("rpySpeed0", "rpySpeed1", "rpySpeed2", "rpySpeedZero"):
+            self.assertIn(element_id, page.text)
+        self.assertIn('min="-10" max="10"', page.text)
         script = self.client.get("/static/app.js")
         self.assertIn("duration_s: duration", script.text)
 
@@ -111,6 +114,20 @@ class ApiTests(unittest.TestCase):
         response = self.client.post("/api/stop")
         self.assertEqual(response.status_code, 200)
         self.assertFalse(response.json()["extreme_calibration"]["active"])
+
+    def test_velocity_endpoints_and_stop(self):
+        self.client.post("/api/calibrate")
+        response = self.client.post(
+            "/api/command/velocity/motors", json={"motor_rev_s": [0.1, 0.2, 0.3]})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["velocity"]["kind"], "motor")
+        self.assertEqual(response.json()["state"], "moving")
+        response = self.client.post(
+            "/api/command/velocity/rpy", json={"rpy_deg_s": [5, 0, 0]})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["velocity"]["kind"], "rpy")
+        response = self.client.post("/api/stop")
+        self.assertFalse(response.json()["velocity"]["active"])
 
     def test_websocket(self):
         with self.client.websocket_connect("/api/ws") as socket:

@@ -84,6 +84,18 @@ def create_app(controller: MechanismController, config_path: str | Path) -> Fast
             body["rpy_deg"], duration_s=body.get("duration_s"))
         return controller.snapshot()
 
+    @app.post("/api/command/velocity/motors")
+    async def command_motor_velocity(request: Request) -> dict[str, Any]:
+        body = await request.json()
+        controller.set_motor_velocity(body["motor_rev_s"])
+        return controller.snapshot()
+
+    @app.post("/api/command/velocity/rpy")
+    async def command_rpy_velocity(request: Request) -> dict[str, Any]:
+        body = await request.json()
+        controller.set_rpy_velocity(body["rpy_deg_s"])
+        return controller.snapshot()
+
     @app.post("/api/config")
     async def update_config(request: Request, save: bool = False) -> dict[str, Any]:
         if controller.enabled:

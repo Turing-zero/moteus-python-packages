@@ -132,6 +132,14 @@
               <span class="duration-input-row"><input id="motorCommandDuration" name="duration" type="number" min="0.05" step="any" value="2" required inputmode="decimal"><span class="duration-unit">秒</span></span>
               <small>按五次同步曲线到达；过短以致超出速度/加速度上限时，后端会拒绝。</small>
             </label>
+            <div class="speed-command-block" aria-label="电机速度控制">
+              <div class="speed-heading"><strong>速度接口 · 电机</strong><span>rev/s</span></div>
+              <label class="speed-slider-row"><span>M1</span><input id="motorSpeed0" type="range" min="-0.5" max="0.5" step="0.01" value="0" data-speed-axis="0"><output id="motorSpeedValue0">0.00</output></label>
+              <label class="speed-slider-row"><span>M2</span><input id="motorSpeed1" type="range" min="-0.5" max="0.5" step="0.01" value="0" data-speed-axis="1"><output id="motorSpeedValue1">0.00</output></label>
+              <label class="speed-slider-row"><span>M3</span><input id="motorSpeed2" type="range" min="-0.5" max="0.5" step="0.01" value="0" data-speed-axis="2"><output id="motorSpeedValue2">0.00</output></label>
+              <small>非零输入会持续运动；归零停速，软限位处自动零速，不报错。</small>
+              <button id="motorSpeedZero" class="button button-small" type="button">速度归零</button>
+            </div>
             <button id="sendMotorCommand" class="button button-command" type="submit">发送正解目标</button>
           </form>
 
@@ -149,6 +157,14 @@
               <span class="duration-input-row"><input id="rpyCommandDuration" name="duration" type="number" min="0.05" step="any" value="2" required inputmode="decimal"><span class="duration-unit">秒</span></span>
               <small>按五次同步曲线到达；过短以致超出速度/加速度上限时，后端会拒绝。</small>
             </label>
+            <div class="speed-command-block" aria-label="RPY 速度控制">
+              <div class="speed-heading"><strong>速度接口 · RPY</strong><span>deg/s</span></div>
+              <label class="speed-slider-row"><span>Roll</span><input id="rpySpeed0" type="range" min="-10" max="10" step="0.1" value="0" data-speed-axis="0"><output id="rpySpeedValue0">0.0</output></label>
+              <label class="speed-slider-row"><span>Pitch</span><input id="rpySpeed1" type="range" min="-10" max="10" step="0.1" value="0" data-speed-axis="1"><output id="rpySpeedValue1">0.0</output></label>
+              <label class="speed-slider-row"><span>Yaw</span><input id="rpySpeed2" type="range" min="-10" max="10" step="0.1" value="0" data-speed-axis="2"><output id="rpySpeedValue2">0.0</output></label>
+              <small>支持三轴同时输入；归零停速，到达 RPY 限位自动零速，不报错。</small>
+              <button id="rpySpeedZero" class="button button-small" type="button">速度归零</button>
+            </div>
             <button id="sendRpyCommand" class="button button-command" type="submit">发送逆解目标</button>
           </form>
 

@@ -26,6 +26,8 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.calibration.motor_kv, 127.2)
         self.assertEqual(config.calibration.firmware_max_current_a, 2.0)
         self.assertEqual(config.calibration.current_limit_scale, 0.25)
+        self.assertEqual(config.safety.velocity_rpy_max_deg_s, 10.0)
+        self.assertEqual(config.safety.velocity_motor_max_rev_s, 0.5)
 
     def test_round_trip_and_atomic_replace(self):
         with tempfile.TemporaryDirectory() as directory:

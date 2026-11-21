@@ -198,6 +198,14 @@ h1 { margin-bottom: 2px; font-size: clamp(17px, 2vw, 23px); line-height: 1.25; l
 .duration-input-row input { width: 100%; min-width: 0; height: 42px; padding: 7px 10px; color: var(--text); background: #0b1210; border: 1px solid var(--border-strong); border-radius: 6px; font-size: 17px; font-variant-numeric: tabular-nums; }
 .duration-unit { flex: 0 0 auto; color: var(--muted); }
 .command-duration small { display: block; margin-top: 5px; color: var(--muted); font-size: 10px; line-height: 1.5; }
+.speed-command-block { margin: 0 0 14px; padding: 10px; background: #101917; border: 1px solid var(--border); border-radius: 7px; }
+.speed-heading { display: flex; justify-content: space-between; margin-bottom: 8px; color: var(--text-secondary); font-size: 12px; }
+.speed-heading span { color: var(--muted); font-size: 10px; }
+.speed-slider-row { display: grid; grid-template-columns: 42px minmax(0, 1fr) 42px; align-items: center; gap: 8px; margin: 8px 0; color: var(--text-secondary); font-size: 11px; }
+.speed-slider-row input[type="range"] { width: 100%; min-width: 0; accent-color: #70aef4; }
+.speed-slider-row output { color: var(--text); text-align: right; font-variant-numeric: tabular-nums; }
+.speed-command-block small { display: block; margin: 8px 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
+.speed-command-block .button { width: 100%; }
 .button-command { width: 100%; min-height: 46px; color: #071422; background: #70aef4; border-color: #9ec5f4; font-size: 14px; }
 .button-command:hover:not(:disabled) { background: #9ec5f4; }
 .command-safety-note { display: flex; flex-direction: column; gap: 3px; margin-top: auto; padding-top: 18px; color: var(--muted); font-size: 11px; }

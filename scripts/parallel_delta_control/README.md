@@ -178,11 +178,15 @@ python3 main.py --hardware --channel can1 --ids 1,2,3
 | POST | `/api/clear` | 清 FAULT/TIMEOUT，成功后保持 |
 | POST | `/api/command/motors` | `{"motor_deg":[d1,d2,d3],"duration_s":2.0}` |
 | POST | `/api/command/rpy` | `{"rpy_deg":[roll,pitch,yaw],"duration_s":2.0}` |
+| POST | `/api/command/velocity/motors` | `{"motor_rev_s":[v1,v2,v3]}`，持续电机速度命令，默认接口上限 ±0.5 rev/s |
+| POST | `/api/command/velocity/rpy` | `{"rpy_deg_s":[roll,pitch,yaw]}`，持续 RPY 速度命令，默认 ±10°/s |
 | POST | `/api/config?save=true` | 完整配置对象，校验、保存并应用 |
 | POST | `/api/config/reset?save=true` | 恢复默认配置 |
 | WS | `/api/ws` | 默认约 20 Hz 状态推送 |
 
 `duration_s` 是本次命令的目标到达时间（秒），正解和逆解均可在每次发送时单独指定。后端据此生成三轴同步五次曲线；省略该字段时仍按速度和加速度上限自动计算最短时长。若指定时间过短、会导致规划曲线突破这些上限，命令会被拒绝且不会部分更新目标。网页默认填写 2 秒。
+
+速度接口使用 `position=NaN` 的 moteus 速度命令。RPY 速度根据当前姿态的机构 Jacobian 实时转换成三轴电机速度，并受速度接口独立上限约束。网页正解和逆解均提供三轴速度拖动条；归零即停速。RPY 某一轴到达限位时仅屏蔽该轴，其他轴可继续运动；电机软限位触发时整组零速。限位不锁存错误，反向输入可恢复；Stop、位置命令、标定和配置修改会退出速度模式。
 
 FastAPI 文档位于 `/api/docs`。服务默认只绑定 localhost；不要在无认证和额外安全隔离的情况下暴露到不受信任网络。
 

@@ -175,6 +175,8 @@ class SafetyParams:
     max_pose_step_deg: float = 300.0
     max_feedback_step_deg: float = 1000.0
     command_complete_tol_deg: float = 1.0
+    velocity_motor_max_rev_s: float = 0.5
+    velocity_rpy_max_deg_s: float = 10.0
 
     def validate(self) -> None:
         for name in ("roll_limit_deg", "pitch_limit_deg", "yaw_limit_deg",
@@ -182,7 +184,8 @@ class SafetyParams:
                      "watchdog_timeout_s", "feedback_timeout_s", "cycle_timeout_s",
                      "control_rate_hz", "state_publish_hz", "fk_tolerance",
                      "fk_path_step_deg", "max_pose_step_deg", "max_feedback_step_deg",
-                     "command_complete_tol_deg"):
+                     "command_complete_tol_deg", "velocity_motor_max_rev_s",
+                     "velocity_rpy_max_deg_s"):
             _finite(name, getattr(self, name), positive=True)
         _finite("feedback_rpy_margin_deg", self.feedback_rpy_margin_deg, lo=0.0)
         _finite("min_condition", self.min_condition, 0.0, 1.0)

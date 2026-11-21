@@ -30,7 +30,8 @@
       state_publish_hz: 100, min_condition: 0.05,
       fk_tolerance: 1e-9, fk_max_iterations: 300,
       fk_path_step_deg: 2, max_pose_step_deg: 300, max_feedback_step_deg: 1000,
-      command_complete_tol_deg: 1
+      command_complete_tol_deg: 1,
+      velocity_motor_max_rev_s: 0.5, velocity_rpy_max_deg_s: 10
     },
     calibration: {
       velocity_rev_s: 1.5, accel_rev_s2: 3, drive_current_a: 0.5,
@@ -100,7 +101,9 @@
         { name: "fk_path_step_deg", label: "FK 路径步长", unit: "deg", min: 0.000001 },
         { name: "max_pose_step_deg", label: "最大姿态分支跳变", unit: "deg", min: 0.000001 },
         { name: "max_feedback_step_deg", label: "最大反馈跳变", unit: "deg", min: 0.000001 },
-        { name: "command_complete_tol_deg", label: "轨迹完成容差", unit: "deg", min: 0.000001 }
+        { name: "command_complete_tol_deg", label: "轨迹完成容差", unit: "deg", min: 0.000001 },
+        { name: "velocity_motor_max_rev_s", label: "速度接口电机上限", unit: "rev/s", min: 0.000001 },
+        { name: "velocity_rpy_max_deg_s", label: "速度接口 RPY 上限", unit: "±deg/s", min: 0.000001 }
       ]
     },
     {
@@ -136,6 +139,10 @@
   let stateRequestInFlight = false;
   let toastTimer = null;
   const actionPending = new Set();
+  let velocityPending = false;
+  let velocityQueued = false;
+  let velocityTimer = null;
+  let velocityGeneration = 0;
 
   function clone(value) {
     return JSON.parse(JSON.stringify(value));
@@ -387,6 +394,7 @@
     const allowed = commandIsAllowed();
     $("sendMotorCommand").disabled = !allowed || actionPending.has("command");
     $("sendRpyCommand").disabled = !allowed || actionPending.has("command");
+    document.querySelectorAll("[data-speed-axis]").forEach((input) => { input.disabled = !allowed; });
     $("calibrateButton").disabled = !hasState || latestState.state === "calibrating" || actionPending.has("calibrate");
     $("extremeCalibrateButton").disabled = !hasState || latestState.enabled === true || latestState.state === "calibrating" || actionPending.has("extreme-calibrate");
     $("holdButton").disabled = !hasState || actionPending.has("hold");
@@ -735,6 +743,12 @@
 
   function setCommandMode(mode) {
     const motor = mode === "motor";
+    if (latestState && latestState.velocity && latestState.velocity.active) {
+      const activeKind = latestState.velocity.kind;
+      if ((motor && activeKind === "rpy") || (!motor && activeKind === "motor")) {
+        zeroVelocityInputs(activeKind);
+      }
+    }
     $("motorCommandForm").hidden = !motor;
     $("rpyCommandForm").hidden = motor;
     $("motorModeButton").classList.toggle("active", motor);
@@ -775,6 +789,72 @@
       actionPending.delete("command");
       updateActionAvailability();
     }
+  }
+
+  function velocityValues(kind) {
+    return [0, 1, 2].map((i) => Number($(`${kind}Speed${i}`).value));
+  }
+
+  function updateVelocityOutputs(kind) {
+    const values = velocityValues(kind);
+    values.forEach((value, i) => {
+      setText(`${kind}SpeedValue${i}`, value.toFixed(kind === "rpy" ? 1 : 2));
+    });
+  }
+
+  async function sendVelocityCommand(kind) {
+    if (velocityPending) {
+      velocityQueued = true;
+      return;
+    }
+    velocityPending = true;
+    const generation = velocityGeneration;
+    const values = velocityValues(kind);
+    const path = kind === "rpy" ? "/api/command/velocity/rpy" : "/api/command/velocity/motors";
+    const body = kind === "rpy" ? { rpy_deg_s: values } : { motor_rev_s: values };
+    try {
+      const payload = await api(path, { method: "POST", body });
+      if (generation !== velocityGeneration) {
+        await api("/api/stop", { method: "POST" });
+      } else {
+        consumeResponse(payload);
+      }
+    } catch (error) {
+      reportError("速度指令失败", error);
+    } finally {
+      velocityPending = false;
+      if (velocityQueued) {
+        velocityQueued = false;
+        scheduleVelocitySend(kind, true);
+      }
+    }
+  }
+
+  function scheduleVelocitySend(kind, immediate = false) {
+    updateVelocityOutputs(kind);
+    clearTimeout(velocityTimer);
+    if (immediate) {
+      void sendVelocityCommand(kind);
+    } else {
+      velocityTimer = setTimeout(() => { void sendVelocityCommand(kind); }, 60);
+    }
+  }
+
+  function zeroVelocityInputs(kind) {
+    for (let i = 0; i < 3; i += 1) $(`${kind}Speed${i}`).value = "0";
+    scheduleVelocitySend(kind, true);
+  }
+
+  function bindSpeedInputs() {
+    ["motor", "rpy"].forEach((kind) => {
+      for (let i = 0; i < 3; i += 1) {
+        const input = $(`${kind}Speed${i}`);
+        input.addEventListener("input", () => scheduleVelocitySend(kind));
+        input.addEventListener("change", () => scheduleVelocitySend(kind, true));
+      }
+      $(`${kind}SpeedZero`).addEventListener("click", () => zeroVelocityInputs(kind));
+      updateVelocityOutputs(kind);
+    });
   }
 
   // Canvas 2D orthographic orbit view. All geometry remains in world millimetres, Z up.
@@ -1216,7 +1296,16 @@
 
   function bindEvents() {
     document.querySelectorAll("[data-tab]").forEach((button) => button.addEventListener("click", () => switchTab(button.dataset.tab)));
-    $("stopButton").addEventListener("click", () => runAction("stop", "/api/stop", "停止指令已发送"));
+    $("stopButton").addEventListener("click", () => {
+      velocityGeneration += 1;
+      clearTimeout(velocityTimer);
+      velocityQueued = false;
+      for (const kind of ["motor", "rpy"]) {
+        for (let i = 0; i < 3; i += 1) $(`${kind}Speed${i}`).value = "0";
+        updateVelocityOutputs(kind);
+      }
+      void runAction("stop", "/api/stop", "停止指令已发送");
+    });
     $("calibrateButton").addEventListener("click", () => runAction(
       "calibrate", "/api/calibrate", "标定指令已发送",
       "标定会使机构执行寻零或运动。\n\n请确认：机构周围无人、运动范围内无障碍、硬件急停可用。\n\n确定开始标定吗？"
@@ -1283,6 +1372,7 @@
 
   buildConfigForm();
   bindEvents();
+  bindSpeedInputs();
   bindCanvasEvents();
   updateActionAvailability();
   resizeCanvas();

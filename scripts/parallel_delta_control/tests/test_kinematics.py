@@ -5,7 +5,8 @@ import numpy as np
 
 from kinematics import (KinematicsError, forward_kinematics, home_result,
                         inverse_from_rpy, motor_deg_to_q, motor_deg_to_raw_rev,
-                        q_to_motor_deg, raw_rev_to_motor_deg, verify_inverse)
+                        q_to_motor_deg, raw_rev_to_motor_deg, verify_inverse,
+                        rpy_rate_to_raw_velocity)
 from mechanism import Q_HOME, Q_HOME_DEG
 from _support import controlled_config
 
@@ -92,6 +93,27 @@ class KinematicsTests(unittest.TestCase):
                     count += 1
         self.assertEqual(count, 637)
         self.assertLess(worst, 1e-8)
+
+    def test_rpy_rate_matches_finite_difference_jacobian(self):
+        for rpy in ([0, 0, 0], [3, 3, 20]):
+            inverse = inverse_from_rpy(self.config, rpy)
+            actual = verify_inverse(self.config, inverse, [0, 0, 0], np.eye(3))
+            epsilon = 1e-4
+            for axis in range(3):
+                rates = np.zeros(3)
+                rates[axis] = 10.0
+                expected = rpy_rate_to_raw_velocity(self.config, actual, rates)
+                plus = np.asarray(rpy, dtype=float).copy()
+                minus = plus.copy()
+                plus[axis] += epsilon
+                minus[axis] -= epsilon
+                inv_plus = inverse_from_rpy(self.config, plus, actual.motor_deg)
+                inv_minus = inverse_from_rpy(self.config, minus, actual.motor_deg)
+                motor_diff = (inv_plus.motor_deg - inv_minus.motor_deg) / (2.0 * epsilon)
+                raw_diff = motor_deg_to_raw_rev(
+                    motor_diff, np.zeros(3), self.config.transmission.directions)
+                expected_rate = raw_diff * 10.0
+                np.testing.assert_allclose(expected, expected_rate, rtol=1e-5, atol=1e-6)
 
     def test_invalid_and_out_of_range(self):
         with self.assertRaises(KinematicsError):

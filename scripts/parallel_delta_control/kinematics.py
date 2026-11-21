@@ -229,5 +229,37 @@ def home_result(config: AppConfig) -> ForwardResult:
     return forward_kinematics(config, np.zeros(3), enforce_limits=False)
 
 
+def rpy_rate_to_raw_velocity(config: AppConfig, actual: ForwardResult,
+                             rpy_rate_deg_s: Iterable[float]) -> np.ndarray:
+    """Convert Roll/Pitch/Yaw rates to raw motor rev/s using the local Jacobian."""
+    roll, pitch, yaw = np.radians(_vector3(rpy_rate_deg_s, "rpy_rate_deg_s"))
+    # Standard active ZYX body-rate mapping, evaluated at the current RPY.
+    current_rpy = np.radians(actual.rpy_deg)
+    cr, sr = math.cos(current_rpy[0]), math.sin(current_rpy[0])
+    cp, sp = math.cos(current_rpy[1]), math.sin(current_rpy[1])
+    body_from_rpy = np.array([
+        [1.0, 0.0, -sp],
+        [0.0, cr, sr * cp],
+        [0.0, -sr, cr * cp],
+    ])
+    body_omega = body_from_rpy @ np.array([roll, pitch, yaw])
+    world_omega = actual.rotation @ body_omega
+    w = np.asarray(actual.geometry["w"], dtype=float)
+    v = np.asarray(actual.geometry["v"], dtype=float)
+    A = np.stack([np.cross(w[i], v[i]) for i in range(3)])
+    B = np.zeros((3, 3))
+    for i in range(3):
+        u = np.array([0.0, 0.0, 1.0])
+        B[i, i] = float(np.dot(np.cross(u, w[i]), v[i]))
+    try:
+        q_dot = np.linalg.solve(B, A) @ world_omega
+    except np.linalg.LinAlgError as exc:
+        raise KinematicsError("当前姿态速度 Jacobian 奇异，无法执行 RPY 速度命令") from exc
+    if not np.all(np.isfinite(q_dot)):
+        raise KinematicsError("RPY 速度转换结果无效")
+    motor_deg_s = q_dot * config.transmission.total_reduction * 180.0 / math.pi
+    return np.asarray(config.transmission.directions, dtype=float) * motor_deg_s / 360.0
+
+
 def home_shaft_deg() -> np.ndarray:
     return Q_HOME_DEG.copy()

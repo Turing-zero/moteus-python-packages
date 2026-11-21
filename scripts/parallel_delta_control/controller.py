@@ -17,7 +17,8 @@ from moteus.protocol import Mode, Register
 from backends import MoteusBackend, fault_description, feedback_mode_name
 from kinematics import (ForwardResult, KinematicsError, forward_kinematics,
                         home_result, inverse_from_rpy, motor_deg_to_raw_rev,
-                        raw_rev_to_motor_deg, verify_inverse)
+                        raw_rev_to_motor_deg, verify_inverse,
+                        rpy_rate_to_raw_velocity)
 from params import AppConfig
 from trajectory import SynchronizedTrajectory, WaypointTrajectory
 
@@ -73,6 +74,14 @@ class InverseCommandPlan:
     config: AppConfig
     zero_rev: np.ndarray
     start_motor: np.ndarray
+
+
+@dataclass
+class VelocityCommand:
+    kind: str
+    values: np.ndarray
+    blocked: bool = False
+    moving: bool = False
 
 
 def _json_safe(value: Any) -> Any:
@@ -133,6 +142,7 @@ class MechanismController:
         self._clear_and_hold = False
         self._clear_deadline = 0.0
         self._trajectory: SynchronizedTrajectory | WaypointTrajectory | None = None
+        self._velocity_command: VelocityCommand | None = None
         self._trajectory_progress = 0.0
         self._running = False
         self._task: asyncio.Task | None = None
@@ -203,10 +213,14 @@ class MechanismController:
                 process = self._extreme_calibration
                 command_stop = ((not self.enabled and process is None) or
                                 (process is not None and process.stage == "settle"))
-                velocity_only = (process is not None and
-                                 process.stage in ("positive", "negative"))
-                if velocity_only:
+                velocity_only = ((process is not None and
+                                  process.stage in ("positive", "negative")) or
+                                 (self.enabled and self._velocity_command is not None))
+                if process is not None and process.stage in ("positive", "negative"):
                     targets, velocities = self._extreme_drive_commands()
+                elif self.enabled and self._velocity_command is not None:
+                    targets = None
+                    velocities = self._current_velocities()
                 elif self.enabled:
                     targets, velocities = self._motion_command()
                 else:
@@ -331,6 +345,87 @@ class MechanismController:
         self.actual_result = result
         self._previous_actual_motor = motor_deg.copy()
         self._previous_feedback_time = now
+
+    def set_motor_velocity(self, motor_rev_s: Iterable[float]) -> None:
+        values = np.asarray(list(motor_rev_s), dtype=float).reshape(3)
+        if not np.all(np.isfinite(values)):
+            raise ControlError("电机速度必须是三个有限数")
+        self._check_ready()
+        limit = self.config.safety.velocity_motor_max_rev_s
+        values = np.clip(values, -limit, limit)
+        self._trajectory = None
+        self._velocity_command = VelocityCommand(
+            "motor", values, moving=bool(np.any(np.abs(values) > 0)))
+        self.enabled = True
+        self.message = "电机速度控制中；归零即停速，软限位处自动停速"
+
+    def set_rpy_velocity(self, rpy_deg_s: Iterable[float]) -> None:
+        values = np.asarray(list(rpy_deg_s), dtype=float).reshape(3)
+        if not np.all(np.isfinite(values)):
+            raise ControlError("RPY 速度必须是三个有限数")
+        self._check_ready()
+        limit = self.config.safety.velocity_rpy_max_deg_s
+        values = np.clip(values, -limit, limit)
+        self._trajectory = None
+        self._velocity_command = VelocityCommand(
+            "rpy", values, moving=bool(np.any(np.abs(values) > 0)))
+        self.enabled = True
+        self.message = "RPY 速度控制中；归零即停速，角度限位处自动停速"
+
+    def _current_velocities(self) -> dict[int, float]:
+        command = self._velocity_command
+        if command is None or self.actual_result is None:
+            return {motor_id: 0.0 for motor_id in self.ids}
+        blocked = False
+        effective_rpy = command.values.copy()
+        if command.kind == "rpy":
+            # Suppress only the axis that reaches its limit.  Other RPY axes
+            # continue through the current local Jacobian.
+            actual_rpy = self.actual_result.rpy_deg
+            projected_rpy = actual_rpy + command.values / self.config.safety.control_rate_hz
+            limits = np.array([
+                self.config.safety.roll_limit_deg,
+                self.config.safety.pitch_limit_deg,
+                self.config.safety.yaw_limit_deg])
+            for index in range(3):
+                if (((actual_rpy[index] >= limits[index] or projected_rpy[index] >= limits[index]) and command.values[index] > 0) or
+                        ((actual_rpy[index] <= -limits[index] or projected_rpy[index] <= -limits[index]) and command.values[index] < 0)):
+                    effective_rpy[index] = 0.0
+                    blocked = True
+            raw = rpy_rate_to_raw_velocity(
+                self.config, self.actual_result, effective_rpy)
+        else:
+            raw = command.values.copy()
+        # Preserve the requested direction if the local Jacobian needs more
+        # motor speed than the dedicated velocity-interface limit allows.
+        max_raw = float(np.max(np.abs(raw)))
+        motor_limit = self.config.safety.velocity_motor_max_rev_s
+        if max_raw > motor_limit:
+            raw = raw * (motor_limit / max_raw)
+        if command.kind != "rpy":
+            assert self._previous_actual_motor is not None
+            minimum = np.asarray(self.config.safety.motor_min_deg)
+            maximum = np.asarray(self.config.safety.motor_max_deg)
+            projected_motor = self._previous_actual_motor + raw * 360.0 / self.config.safety.control_rate_hz
+            for index in range(3):
+                if (((self._previous_actual_motor[index] >= maximum[index] or projected_motor[index] >= maximum[index]) and raw[index] > 0) or
+                        ((self._previous_actual_motor[index] <= minimum[index] or projected_motor[index] <= minimum[index]) and raw[index] < 0)):
+                    blocked = True
+        if blocked and command.kind != "rpy":
+            raw = np.zeros(3)
+        elif blocked and not np.any(np.abs(raw) > 1e-12):
+            raw = np.zeros(3)
+        command.blocked = blocked
+        command.moving = bool(np.any(np.abs(raw) > 1e-12))
+        if blocked and command.moving:
+            self.message = "部分轴已到限位，该轴零速，其余轴继续运动"
+        elif blocked:
+            self.message = "已到速度接口限位，速度为零；反向输入可恢复"
+        elif command.moving:
+            self.message = "速度控制中"
+        else:
+            self.message = "速度为零"
+        return {motor_id: float(value) for motor_id, value in zip(self.ids, raw)}
 
     def _cycle_safety(self):
         if self._extreme_calibration is None:
@@ -533,6 +628,7 @@ class MechanismController:
             self.message = "故障已清除，在当前位置保持"
 
     def _invalidate_calibration(self, message: str) -> None:
+        self._velocity_command = None
         self._extreme_calibration = None
         self.calibrated = False
         self.enabled = False
@@ -569,6 +665,7 @@ class MechanismController:
 
     def calibrate(self) -> None:
         """Capture software zero only; never write or rezero controller config."""
+        self._velocity_command = None
         if self._extreme_calibration is not None:
             raise ControlError("极限标定期间不能人工标定")
         if self.enabled:
@@ -591,6 +688,7 @@ class MechanismController:
 
     def start_extreme_calibration(self) -> None:
         """Start the non-blocking positive/negative mechanical-limit procedure."""
+        self._velocity_command = None
         if self._extreme_calibration is not None:
             raise ControlError("极限标定已在进行")
         if self.enabled:
@@ -610,6 +708,7 @@ class MechanismController:
         self.message = "极限标定：三轴同时低速、限流正转，寻找正转极限"
 
     def hold(self) -> None:
+        self._velocity_command = None
         if self._extreme_calibration is not None:
             raise ControlError("极限标定期间不能手动保持")
         self._check_fresh_no_fault()
@@ -630,6 +729,7 @@ class MechanismController:
             self.target_result = copy.deepcopy(self.actual_result)
 
     def stop(self) -> None:
+        self._velocity_command = None
         self._extreme_calibration = None
         self.enabled = False
         self._trajectory = None
@@ -639,6 +739,7 @@ class MechanismController:
             motor.raw_target_rev = None
 
     def clear(self) -> None:
+        self._velocity_command = None
         if self._extreme_calibration is not None:
             raise ControlError("极限标定期间不能清故障；请先 stop")
         if not self.backend.is_open or not self._all_fresh():
@@ -716,6 +817,7 @@ class MechanismController:
         for motor_id, target in zip(self.ids, raw_targets):
             self.motors[motor_id].raw_target_rev = float(target)
         self._trajectory = trajectory
+        self._velocity_command = None
         self._trajectory_progress = 0.0
         self.target_result = preview
         self.message = ("直接路径预检未通过，已改为经直立点平滑绕行"
@@ -869,6 +971,10 @@ class MechanismController:
             return "uncalibrated"
         if not self.enabled:
             return "stopped"
+        if self._velocity_command is not None:
+            if not self._velocity_command.moving:
+                return "ready"
+            return "moving"
         if self._trajectory is not None:
             return "moving"
         if self.actual_result is not None:
@@ -945,6 +1051,12 @@ class MechanismController:
                 "progress": self._trajectory_progress,
                 "duration_s": None if self._trajectory is None else self._trajectory.duration_s,
                 "path_rpy_allowance_deg": self._path_rpy_allowance,
+            },
+            "velocity": {
+                "active": self._velocity_command is not None,
+                "kind": None if self._velocity_command is None else self._velocity_command.kind,
+                "values": None if self._velocity_command is None else self._velocity_command.values,
+                "blocked": False if self._velocity_command is None else self._velocity_command.blocked,
             },
             "backend": {
                 "open": self.backend.is_open,
