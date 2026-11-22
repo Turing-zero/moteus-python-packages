@@ -16,6 +16,12 @@ from params import AppConfig, ConfigError, save_config
 
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+MAX_STATE_PUBLISH_HZ = 20.0
+
+
+def telemetry_period_s(rate_hz: float) -> float:
+    """Never let browser telemetry starve the hardware control loop."""
+    return 1.0 / min(float(rate_hz), MAX_STATE_PUBLISH_HZ)
 
 
 def create_app(controller: MechanismController, config_path: str | Path) -> FastAPI:
@@ -120,11 +126,11 @@ def create_app(controller: MechanismController, config_path: str | Path) -> Fast
     @app.websocket("/api/ws")
     async def telemetry(websocket: WebSocket) -> None:
         await websocket.accept()
-        period = 1.0 / controller.config.safety.state_publish_hz
+        period = telemetry_period_s(controller.config.safety.state_publish_hz)
         try:
             while True:
                 await websocket.send_json(controller.snapshot())
-                period = 1.0 / controller.config.safety.state_publish_hz
+                period = telemetry_period_s(controller.config.safety.state_publish_hz)
                 await asyncio.sleep(period)
         except (WebSocketDisconnect, asyncio.CancelledError):
             return

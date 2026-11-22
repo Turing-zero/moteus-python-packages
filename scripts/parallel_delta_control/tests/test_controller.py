@@ -1,5 +1,6 @@
 import asyncio
 import dataclasses
+import math
 import sys
 import threading
 import time
@@ -102,16 +103,16 @@ class ControllerTests(unittest.TestCase):
         self.assertIsNotNone(controller.fault)
         self.assertEqual(controller.snapshot()["state"], "fault")
 
-    def test_feedback_jump_invalidates_zero(self):
+    def test_feedback_jump_invalidates_zero_but_keeps_hold(self):
         controller = fake_controller()
         controller.calibrate()
         controller._previous_feedback_time = time.monotonic() - 0.125
         feed(controller, [20.0, -3.5, 0.75], mode=Mode.POSITION)
         self.assertFalse(controller.calibrated)
-        self.assertFalse(controller.enabled)
-        self.assertIsNotNone(controller.fault)
-        self.assertIn("电机 1", controller.fault)
-        self.assertIn("反馈间隔", controller.fault)
+        self.assertTrue(controller.enabled)
+        self.assertIsNone(controller.fault)
+        self.assertIn("电机 1", controller.message)
+        self.assertIn("反馈间隔", controller.message)
         diagnostic = controller.snapshot()["last_feedback_jump"]
         self.assertEqual(diagnostic["motor_id"], 1)
         self.assertAlmostEqual(diagnostic["step_deg"], 3510.0, places=6)
@@ -247,9 +248,33 @@ class ControllerTests(unittest.TestCase):
         controller.stop()
         self.assertIsNone(controller._velocity_command)
 
+    def test_velocity_integrates_position_and_applies_current_limit(self):
+        controller = fake_controller()
+        controller.calibrate()
+        controller.set_rpy_velocity([0, 0, 10])
+        command = controller._velocity_command
+        initial = command.position_rev.copy()
+        command.last_time_s = time.monotonic() - 0.1
+        velocities = controller._current_velocities()
+        self.assertTrue(np.all(np.isfinite(command.position_rev)))
+        self.assertGreater(np.max(np.abs(command.position_rev - initial)), 0.0)
+        self.assertGreater(np.max(np.abs(list(velocities.values()))), 0.0)
+        expected_torque = (0.8 * (1.5 / math.sqrt(3.0)) *
+                           (60.0 / (2.0 * math.pi)) / 127.2)
+        self.assertAlmostEqual(
+            controller._cycle_safety().maximum_torque_nm, expected_torque, places=12)
+        self.assertEqual(controller._global_current_limit_scale(), 0.4)
+        controller.stop()
+
     def test_extreme_calibration_success_and_return(self):
         controller = fake_controller()
         controller.config.safety.max_feedback_step_deg = 5000.0
+        # Even tiny pose/soft limits must not abort before calibration completes.
+        controller.config.safety.roll_limit_deg = 0.1
+        controller.config.safety.pitch_limit_deg = 0.1
+        controller.config.safety.yaw_limit_deg = 0.1
+        controller.config.safety.motor_min_deg = (-1.0, -1.0, -1.0)
+        controller.config.safety.motor_max_deg = (1.0, 1.0, 1.0)
         clock = [time.monotonic()]
         positive = np.array([10.25, -3.5, 0.75]) + 8.0 / 3.0
         negative = np.array([10.25, -3.5, 0.75]) - 8.0 / 3.0
@@ -274,6 +299,10 @@ class ControllerTests(unittest.TestCase):
             extreme_sample(controller, negative, "negative")
             clock[0] += 1.2
             extreme_sample(controller, negative, "negative")
+            self.assertEqual(controller._extreme_calibration.stage, "return_settle")
+            clock[0] += controller.config.calibration.settle_s
+            extreme_sample(controller, negative, "negative")
+            controller._service_extreme_calibration(clock[0])
             self.assertEqual(controller._extreme_calibration.stage, "return")
             np.testing.assert_allclose(
                 controller.zero_rev, [10.25, -3.5, 0.75])
@@ -307,6 +336,9 @@ class ControllerTests(unittest.TestCase):
                     clock[0] += controller.config.calibration.settle_s
                     extreme_sample(controller, positions, stage)
                     controller._service_extreme_calibration(clock[0])
+            clock[0] += controller.config.calibration.settle_s
+            extreme_sample(controller, negative, "negative")
+            controller._service_extreme_calibration(clock[0])
             self.assertFalse(controller.calibrated)
             self.assertFalse(controller.enabled)
             self.assertIsNone(controller._extreme_calibration)

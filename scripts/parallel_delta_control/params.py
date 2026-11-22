@@ -161,13 +161,14 @@ class SafetyParams:
     velocity_limit_rev_s: float = 100.0
     accel_limit_rev_s2: float = 100.0
     maximum_torque_nm: float | None = 1.0
+    max_current_a: float = 0.8
     kp_scale: float | None = 1.0
     kd_scale: float | None = 1.0
     watchdog_timeout_s: float = 0.25
     feedback_timeout_s: float = 0.5
     cycle_timeout_s: float = 0.05
     control_rate_hz: float = 100.0
-    state_publish_hz: float = 100.0
+    state_publish_hz: float = 20.0
     min_condition: float = 0.05
     fk_tolerance: float = 1e-9
     fk_max_iterations: int = 300
@@ -181,6 +182,7 @@ class SafetyParams:
     def validate(self) -> None:
         for name in ("roll_limit_deg", "pitch_limit_deg", "yaw_limit_deg",
                      "max_move_deg", "velocity_limit_rev_s", "accel_limit_rev_s2",
+                     "max_current_a",
                      "watchdog_timeout_s", "feedback_timeout_s", "cycle_timeout_s",
                      "control_rate_hz", "state_publish_hz", "fk_tolerance",
                      "fk_path_step_deg", "max_pose_step_deg", "max_feedback_step_deg",

@@ -65,6 +65,7 @@ class ExtremeCalibrationProcess:
     stable_sum_rev: dict[int, float] = field(default_factory=dict)
     stable_count: dict[int, int] = field(default_factory=dict)
     positive_rev: np.ndarray | None = None
+    negative_rev: np.ndarray | None = None
 
 
 @dataclass
@@ -80,6 +81,8 @@ class InverseCommandPlan:
 class VelocityCommand:
     kind: str
     values: np.ndarray
+    position_rev: np.ndarray
+    last_time_s: float
     blocked: bool = False
     moving: bool = False
 
@@ -212,21 +215,22 @@ class MechanismController:
                     self._invalidate_calibration("后端已重新连接，必须重新直立标定")
                 process = self._extreme_calibration
                 command_stop = ((not self.enabled and process is None) or
-                                (process is not None and process.stage == "settle"))
-                velocity_only = ((process is not None and
-                                  process.stage in ("positive", "negative")) or
-                                 (self.enabled and self._velocity_command is not None))
+                                (process is not None and process.stage in ("settle", "return_settle")))
+                velocity_only = (process is not None and
+                                 process.stage in ("positive", "negative"))
                 if process is not None and process.stage in ("positive", "negative"):
                     targets, velocities = self._extreme_drive_commands()
                 elif self.enabled and self._velocity_command is not None:
-                    targets = None
+                    targets = {motor_id: float(self._velocity_command.position_rev[index])
+                               for index, motor_id in enumerate(self.ids)}
                     velocities = self._current_velocities()
                 elif self.enabled:
                     targets, velocities = self._motion_command()
                 else:
                     targets, velocities = None, None
-                current_limit_scale = None if process is None else \
-                    self.config.calibration.current_limit_scale
+                current_limit_scale = (self._global_current_limit_scale()
+                                       if process is None else
+                                       self.config.calibration.current_limit_scale)
                 results = await self.backend.cycle(
                     targets, self._cycle_safety(), command_stop=command_stop,
                     velocities_rev_s=velocities,
@@ -329,7 +333,7 @@ class MechanismController:
                             message, np.round(raw, 9).tolist(),
                             np.round(deltas, 6).tolist(), self._loop_hz, self._cycle_ms)
                 self._invalidate_calibration(message)
-                self._trip(message)
+                self._warn_hold(message)
                 return
         initial_R = np.eye(3) if self.actual_result is None else self.actual_result.rotation
         initial_motor = np.zeros(3) if previous is None else previous
@@ -338,9 +342,10 @@ class MechanismController:
                                self._path_rpy_allowance)
             result = forward_kinematics(
                 self.config, motor_deg, initial_motor, initial_R,
-                rpy_margin_deg=feedback_margin)
+                rpy_margin_deg=feedback_margin,
+                enforce_limits=self._extreme_calibration is None)
         except KinematicsError as exc:
-            self._trip(f"反馈正解失败：{exc}")
+            self._warn_hold(f"反馈正解失败：{exc}")
             return
         self.actual_result = result
         self._previous_actual_motor = motor_deg.copy()
@@ -354,8 +359,13 @@ class MechanismController:
         limit = self.config.safety.velocity_motor_max_rev_s
         values = np.clip(values, -limit, limit)
         self._trajectory = None
+        existing = self._velocity_command
+        position_rev = (self._raw_positions() if existing is None or existing.kind != "motor"
+                        else existing.position_rev.copy())
+        last_time = time.monotonic() if existing is None or existing.kind != "motor" else existing.last_time_s
         self._velocity_command = VelocityCommand(
-            "motor", values, moving=bool(np.any(np.abs(values) > 0)))
+            "motor", values, position_rev=position_rev, last_time_s=last_time,
+            moving=bool(np.any(np.abs(values) > 0)))
         self.enabled = True
         self.message = "电机速度控制中；归零即停速，软限位处自动停速"
 
@@ -367,8 +377,13 @@ class MechanismController:
         limit = self.config.safety.velocity_rpy_max_deg_s
         values = np.clip(values, -limit, limit)
         self._trajectory = None
+        existing = self._velocity_command
+        position_rev = (self._raw_positions() if existing is None or existing.kind != "rpy"
+                        else existing.position_rev.copy())
+        last_time = time.monotonic() if existing is None or existing.kind != "rpy" else existing.last_time_s
         self._velocity_command = VelocityCommand(
-            "rpy", values, moving=bool(np.any(np.abs(values) > 0)))
+            "rpy", values, position_rev=position_rev, last_time_s=last_time,
+            moving=bool(np.any(np.abs(values) > 0)))
         self.enabled = True
         self.message = "RPY 速度控制中；归零即停速，角度限位处自动停速"
 
@@ -425,11 +440,39 @@ class MechanismController:
             self.message = "速度控制中"
         else:
             self.message = "速度为零"
+        now = time.monotonic()
+        dt = max(0.0, min(now - command.last_time_s, 0.25))
+        command.last_time_s = now
+        command.position_rev = command.position_rev + raw * dt
+        # Keep the integrated position target itself inside the motor limits.
+        lower = self.zero_rev + self.directions * np.asarray(
+            self.config.safety.motor_min_deg) / 360.0
+        upper = self.zero_rev + self.directions * np.asarray(
+            self.config.safety.motor_max_deg) / 360.0
+        command.position_rev = np.clip(
+            command.position_rev, np.minimum(lower, upper), np.maximum(lower, upper))
         return {motor_id: float(value) for motor_id, value in zip(self.ids, raw)}
+
+    def _current_limited_torque(self, existing_nm: float | None) -> float | None:
+        motor_kv = self.config.calibration.motor_kv
+        if motor_kv is None:
+            return existing_nm
+        torque_constant = (1.5 / math.sqrt(3.0)) * (60.0 / (2.0 * math.pi)) / motor_kv
+        current_torque = self.config.safety.max_current_a * torque_constant
+        return current_torque if existing_nm is None else min(existing_nm, current_torque)
+
+    def _global_current_limit_scale(self) -> float | None:
+        firmware = self.config.calibration.firmware_max_current_a
+        if firmware is None or firmware <= 0:
+            return None
+        return self.config.safety.max_current_a / firmware
 
     def _cycle_safety(self):
         if self._extreme_calibration is None:
-            return self.config.safety
+            return dataclasses.replace(
+                self.config.safety,
+                maximum_torque_nm=self._current_limited_torque(
+                    self.config.safety.maximum_torque_nm))
         calibration = self.config.calibration
         return dataclasses.replace(
             self.config.safety,
@@ -490,10 +533,15 @@ class MechanismController:
                 self._fail_extreme_calibration(
                     f"电机 {motor_id} Q 轴电流 {current:+.3f} A 超过标定限值")
                 return
-        if process.stage == "settle":
+        if process.stage in ("settle", "return_settle"):
             if now - process.stage_started >= calibration.settle_s:
-                self._reset_extreme_stage("negative", now)
-                self.message = "极限标定：中立保持完成，三轴开始反转"
+                if process.stage == "settle":
+                    self._reset_extreme_stage("negative", now)
+                    self.message = "极限标定：STOPPED 复位完成，三轴开始反转"
+                else:
+                    assert process.positive_rev is not None and process.negative_rev is not None
+                    self._accept_extreme_midpoint(
+                        process.positive_rev, process.negative_rev, now)
             return
         if process.stage == "return":
             if self._trajectory is not None:
@@ -555,7 +603,9 @@ class MechanismController:
             self.message = "极限标定：正转极限已记录，短暂 STOPPED 复位后反转"
             return
         assert process.positive_rev is not None
-        self._accept_extreme_midpoint(process.positive_rev, extreme, now)
+        process.negative_rev = extreme
+        self._reset_extreme_stage("return_settle", now)
+        self.message = "极限标定：反转极限已记录，STOPPED 复位后归零"
 
     def _accept_extreme_midpoint(self, positive: np.ndarray,
                                  negative: np.ndarray, now: float) -> None:
@@ -641,6 +691,15 @@ class MechanismController:
         self.message = message
         for motor in self.motors.values():
             motor.raw_target_rev = None
+
+    def _warn_hold(self, message: str) -> None:
+        """Nonfatal software warning: stop the path but retain position control."""
+        log.warning(message)
+        self.message = message
+        self._trajectory = None
+        self._velocity_command = None
+        self._capture_hold_targets()
+        self.enabled = True
 
     def _trip(self, message: str) -> None:
         self._extreme_calibration = None
@@ -1056,6 +1115,7 @@ class MechanismController:
                 "active": self._velocity_command is not None,
                 "kind": None if self._velocity_command is None else self._velocity_command.kind,
                 "values": None if self._velocity_command is None else self._velocity_command.values,
+                "position_rev": None if self._velocity_command is None else self._velocity_command.position_rev,
                 "blocked": False if self._velocity_command is None else self._velocity_command.blocked,
             },
             "backend": {

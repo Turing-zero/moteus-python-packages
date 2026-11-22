@@ -13,7 +13,7 @@ sys.path.insert(0, str(REPO_MOTEUS))
 from fastapi.testclient import TestClient
 
 from _support import fake_controller
-from server import create_app
+from server import create_app, telemetry_period_s
 
 
 class ApiTests(unittest.TestCase):
@@ -128,6 +128,11 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.json()["velocity"]["kind"], "rpy")
         response = self.client.post("/api/stop")
         self.assertFalse(response.json()["velocity"]["active"])
+
+    def test_telemetry_rate_is_capped(self):
+        self.assertEqual(telemetry_period_s(100.0), 0.05)
+        self.assertEqual(telemetry_period_s(20.0), 0.05)
+        self.assertEqual(telemetry_period_s(10.0), 0.1)
 
     def test_websocket(self):
         with self.client.websocket_connect("/api/ws") as socket:
